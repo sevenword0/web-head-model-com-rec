@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Head Model Studio — 얼굴 합성 · 감정 표정 · 녹화</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>🎭 Head Model Studio</h1>
+    <p class="tagline">MediaPipe로 머리에 모델을 합성하고, 감정·말하는 입모양을 적용해 녹화하세요</p>
+  </header>
+
+  <main class="layout">
+    <!-- ===== 무대 (Stage) ===== -->
+    <section class="stage">
+      <div class="stage-inner" id="stageInner">
+        <video id="inputVideo" playsinline autoplay muted></video>
+        <canvas id="outputCanvas"></canvas>
+        <div id="status" class="status">카메라 시작을 눌러주세요</div>
+      </div>
+
+      <div class="stage-controls">
+        <button id="startBtn" class="btn primary">▶ 카메라 시작</button>
+        <button id="recordBtn" class="btn danger" disabled>● 녹화</button>
+        <span id="recTimer" class="rec-timer hidden">00:00</span>
+        <label class="inline-check">
+          <input type="checkbox" id="audioToggle" checked /> 마이크 녹음
+        </label>
+        <label class="inline-check">
+          <input type="checkbox" id="showVideoToggle" checked /> 배경 영상
+        </label>
+      </div>
+
+      <div id="emotionReadout" class="emotion-readout"></div>
+
+      <div id="downloads" class="downloads"></div>
+    </section>
+
+    <!-- ===== 사이드 패널 ===== -->
+    <aside class="panel">
+      <div class="tabs">
+        <button class="tab active" data-tab="head">머리</button>
+        <button class="tab" data-tab="emotion">감정</button>
+        <button class="tab" data-tab="appearance">외형</button>
+        <button class="tab" data-tab="settings">설정</button>
+      </div>
+
+      <!-- 머리 탭 -->
+      <div class="tab-panel active" data-panel="head">
+        <h3>머리 종류</h3>
+        <div class="seg">
+          <button class="seg-btn active" data-headtype="cube">기본 큐브</button>
+          <button class="seg-btn" data-headtype="glb">GLB 모델</button>
+        </div>
+
+        <div class="field">
+          <label>GLB 파일 로드</label>
+          <input type="file" id="glbInput" accept=".glb,.gltf" />
+          <small id="glbInfo" class="hint">GLB/GLTF 파일을 선택하면 머리에 합성됩니다. ARKit 블렌드셰이프가 있으면 표정이 자동 적용됩니다.</small>
+        </div>
+
+        <h3>정렬 (Alignment)</h3>
+        <div class="field">
+          <label>크기 <span class="val" id="scaleVal">1.00</span></label>
+          <input type="range" id="scale" min="0.3" max="3" step="0.01" value="1" />
+        </div>
+        <div class="field">
+          <label>가로 오프셋 <span class="val" id="offsetXVal">0</span></label>
+          <input type="range" id="offsetX" min="-200" max="200" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label>세로 오프셋 <span class="val" id="offsetYVal">0</span></label>
+          <input type="range" id="offsetY" min="-200" max="200" step="1" value="0" />
+        </div>
+        <div class="field">
+          <label>회전 보정 X / Y / Z (°)</label>
+          <div class="row3">
+            <input type="range" id="rotX" min="-45" max="45" step="1" value="0" />
+            <input type="range" id="rotY" min="-45" max="45" step="1" value="0" />
+            <input type="range" id="rotZ" min="-45" max="45" step="1" value="0" />
+          </div>
+        </div>
+        <label class="inline-check">
+          <input type="checkbox" id="mirrorToggle" checked /> 거울 모드 (셀피)
+        </label>
+      </div>
+
+      <!-- 감정 탭 -->
+      <div class="tab-panel" data-panel="emotion">
+        <h3>감정 모드</h3>
+        <div class="seg">
+          <button class="seg-btn active" data-emomode="auto">자동 감지</button>
+          <button class="seg-btn" data-emomode="manual">수동 지정</button>
+        </div>
+
+        <div id="manualEmotion" class="manual-emotion disabled">
+          <div class="emo-grid">
+            <button class="emo-btn active" data-emotion="neutral">😐 중립</button>
+            <button class="emo-btn" data-emotion="happy">😄 기쁨</button>
+            <button class="emo-btn" data-emotion="sad">😢 슬픔</button>
+            <button class="emo-btn" data-emotion="angry">😠 분노</button>
+            <button class="emo-btn" data-emotion="surprised">😲 놀람</button>
+          </div>
+          <div class="field">
+            <label>감정 정도 <span class="val" id="intensityVal">1.00</span></label>
+            <input type="range" id="intensity" min="0" max="1" step="0.01" value="1" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>표정 반영 강도 <span class="val" id="exprStrengthVal">1.00</span></label>
+          <input type="range" id="exprStrength" min="0" max="2" step="0.01" value="1" />
+          <small class="hint">블렌드셰이프(눈 깜빡임, 입 벌림 등)를 모델에 반영하는 정도</small>
+        </div>
+
+        <label class="inline-check">
+          <input type="checkbox" id="speakToggle" checked /> 말하는 입모양 (실시간 입 벌림)
+        </label>
+
+        <div class="bs-meters" id="bsMeters"></div>
+      </div>
+
+      <!-- 외형 탭 (픽셀 페이스) -->
+      <div class="tab-panel" data-panel="appearance">
+        <h3>큐브 픽셀 페이스</h3>
+        <small class="hint">기본 큐브 머리의 눈·코·입 색상을 지정합니다.</small>
+        <div class="field">
+          <label>피부 / 바탕</label>
+          <input type="color" id="faceColor" value="#f1c27d" />
+        </div>
+        <div class="field">
+          <label>큐브 측면</label>
+          <input type="color" id="cubeColor" value="#d9a066" />
+        </div>
+        <div class="field">
+          <label>눈</label>
+          <input type="color" id="eyeColor" value="#2b2b2b" />
+        </div>
+        <div class="field">
+          <label>눈썹</label>
+          <input type="color" id="browColor" value="#5a3a1a" />
+        </div>
+        <div class="field">
+          <label>입</label>
+          <input type="color" id="mouthColor" value="#b5403a" />
+        </div>
+        <div class="field">
+          <label>볼터치</label>
+          <input type="color" id="cheekColor" value="#e88f8f" />
+        </div>
+        <div class="preview-wrap">
+          <span class="hint">미리보기</span>
+          <canvas id="facePreview" width="160" height="160"></canvas>
+        </div>
+      </div>
+
+      <!-- 설정 탭 -->
+      <div class="tab-panel" data-panel="settings">
+        <h3>머리 설정 저장</h3>
+        <small class="hint">모든 정렬·외형·감정 옵션을 저장합니다.</small>
+        <div class="btn-row">
+          <button id="saveBtn" class="btn">💾 브라우저에 저장</button>
+          <button id="loadBtn" class="btn">📂 불러오기</button>
+        </div>
+        <div class="btn-row">
+          <button id="exportBtn" class="btn">⬇ JSON 내보내기</button>
+          <label class="btn file-btn">⬆ JSON 가져오기
+            <input type="file" id="importInput" accept=".json" hidden />
+          </label>
+        </div>
+        <button id="resetBtn" class="btn ghost">↺ 기본값으로 초기화</button>
+        <div id="saveStatus" class="save-status"></div>
+
+        <h3>저장된 프리셋</h3>
+        <div class="field">
+          <input type="text" id="presetName" placeholder="프리셋 이름" />
+          <button id="savePresetBtn" class="btn small">프리셋 저장</button>
+        </div>
+        <ul id="presetList" class="preset-list"></ul>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <small>MediaPipe FaceLandmarker · Three.js · MediaRecorder — 100% 클라이언트 사이드. 카메라/마이크 데이터는 외부로 전송되지 않습니다.</small>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
