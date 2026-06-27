@@ -3,41 +3,74 @@
 const STORAGE_KEY = "headStudio.settings";
 const PRESET_KEY = "headStudio.presets";
 
-// Minecraft Steve-style 8x8 face as a paint grid.
-// H=hair S=skin B=brow W=eyeWhite I=iris M=mouth/mustache
 export const STEVE_SKIN = "#b58868";
-export function buildSteveGrid() {
-  const H = "#4b3621", S = "#b58868", B = "#46352b",
-        W = "#e9e9e9", I = "#3f3a8c", M = "#6c4f33";
-  return [
-    H, H, H, H, H, H, H, H,
-    H, H, H, H, H, H, H, H,
-    S, S, S, S, S, S, S, S,
-    S, B, B, S, S, B, B, S,
-    S, W, I, S, S, I, W, S,
-    S, S, M, M, M, M, S, S,
-    S, S, S, M, M, S, S, S,
-    S, S, S, S, S, S, S, S,
-  ];
-}
 
-// Cube faces and emotions used by the per-face / per-expression painting.
+// Cube faces and the per-face paint LAYERS. Eyes / brows / mouth are separate
+// layers so they can be animated (blink, tilt, open, bend) by the face rig.
 export const FACE_KEYS = ["front", "back", "left", "right", "top", "bottom"];
 export const FACE_LABELS = { front: "앞", back: "뒤", left: "왼쪽", right: "오른쪽", top: "위", bottom: "아래" };
-export const EMO_KEYS = ["neutral", "happy", "sad", "angry", "surprised"];
-export const EMO_LABELS = { neutral: "중립", happy: "기쁨", sad: "슬픔", angry: "분노", surprised: "놀람" };
+export const LAYER_KEYS = ["base", "brows", "eyes", "mouth"];
+export const LAYER_LABELS = { base: "베이스", brows: "눈썹", eyes: "눈", mouth: "입" };
 
-function emptyEmotionSet() {
+function emptyLayerSet() {
   const o = {};
-  for (const e of EMO_KEYS) o[e] = null;
+  for (const l of LAYER_KEYS) o[l] = null;
   return o;
 }
 
-// Build the default paint set: Steve on the front (neutral), everything else empty.
+// Minecraft Steve face split into animatable layers (8x8).
+// H=hair S=skin B=brow W=eyeWhite I=iris M=mouth/mustache
+export function buildSteveLayers() {
+  const H = "#4b3621", S = "#b58868", B = "#46352b",
+        W = "#e9e9e9", I = "#3f3a8c", M = "#6c4f33", _ = null;
+  const base = [
+    H, H, H, H, H, H, H, H,
+    H, H, H, H, H, H, H, H,
+    S, S, S, S, S, S, S, S,
+    S, S, S, S, S, S, S, S,
+    S, S, S, S, S, S, S, S,
+    S, S, S, S, S, S, S, S,
+    S, S, S, S, S, S, S, S,
+    S, S, S, S, S, S, S, S,
+  ];
+  const brows = [
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, B, B, _, _, B, B, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+  ];
+  const eyes = [
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, W, I, _, _, I, W, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+  ];
+  const mouth = [
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, _,
+    _, _, M, M, M, M, _, _,
+    _, _, _, M, M, _, _, _,
+    _, _, _, _, _, _, _, _,
+  ];
+  return { base, brows, eyes, mouth };
+}
+
+// Build the default paint set: Steve layers on the front, others empty.
 export function buildDefaultPaintFaces() {
   const faces = {};
-  for (const f of FACE_KEYS) faces[f] = emptyEmotionSet();
-  faces.front.neutral = buildSteveGrid();
+  for (const f of FACE_KEYS) faces[f] = emptyLayerSet();
+  faces.front = buildSteveLayers();
   return faces;
 }
 
@@ -74,23 +107,27 @@ export const DEFAULTS = {
   showVideo: true,
 };
 
-// Ensure a settings object has a well-formed paintFaces structure (and migrate
-// the old single `paintGrid` field into front/neutral).
+// Ensure a settings object has a well-formed layered paintFaces structure,
+// migrating older formats (single paintGrid, or per-emotion grids) into layers.
 export function normalizeSettings(s) {
   if (!s.paintFaces || typeof s.paintFaces !== "object") {
     s.paintFaces = buildDefaultPaintFaces();
     if (Array.isArray(s.paintGrid)) {
-      for (const f of FACE_KEYS) s.paintFaces[f] = emptyEmotionSet();
-      s.paintFaces.front.neutral = s.paintGrid;
+      for (const f of FACE_KEYS) s.paintFaces[f] = emptyLayerSet();
+      s.paintFaces.front.base = s.paintGrid;
     }
   } else {
     for (const f of FACE_KEYS) {
-      if (!s.paintFaces[f] || typeof s.paintFaces[f] !== "object") {
-        s.paintFaces[f] = emptyEmotionSet();
+      const cur = s.paintFaces[f];
+      if (!cur || typeof cur !== "object") {
+        s.paintFaces[f] = emptyLayerSet();
+      } else if (!("base" in cur)) {
+        // old per-emotion format → use the neutral grid as the base layer
+        const set = emptyLayerSet();
+        if (Array.isArray(cur.neutral)) set.base = cur.neutral;
+        s.paintFaces[f] = set;
       } else {
-        for (const e of EMO_KEYS) {
-          if (!(e in s.paintFaces[f])) s.paintFaces[f][e] = null;
-        }
+        for (const l of LAYER_KEYS) if (!(l in cur)) cur[l] = null;
       }
     }
   }

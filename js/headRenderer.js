@@ -2,7 +2,8 @@
 // GLB model, aligned onto the tracked face using landmarks + head-pose matrix.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { drawPixelFace, drawPaintedFace, drawMouthLayer } from "./pixelFace.js";
+import { drawPixelFace } from "./pixelFace.js";
+import { drawRiggedFace, drawLayeredStatic } from "./faceRig.js";
 
 // Landmark indices (MediaPipe FaceMesh)
 const L = {
@@ -111,15 +112,15 @@ export class HeadRenderer {
     this._faceDirty = true;
   }
 
-  // Draw a single cube face's static content for a given emotion.
-  _drawFaceStatic(key, emotion) {
+  // Draw a single cube face's static (non-animated) content.
+  _drawFaceStatic(key) {
     const f = this.faces[key];
     const size = f.canvas.width;
     if (this.faceMode === "painted" && this.paintFaces) {
-      const set = this.paintFaces[key] || {};
-      const grid = set[emotion] || set.neutral || null;
-      if (grid) {
-        drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
+      const layers = this.paintFaces[key];
+      const has = layers && (layers.base || layers.brows || layers.eyes || layers.mouth);
+      if (has) {
+        drawLayeredStatic(f.ctx, size, layers, this.paintGridN, this.colors.face);
       } else {
         f.ctx.fillStyle = this.colors.cube;
         f.ctx.fillRect(0, 0, size, size);
@@ -154,7 +155,7 @@ export class HeadRenderer {
 
     if (this._faceDirty) {
       for (const key of Object.keys(this.faces)) {
-        if (key !== "front") this._drawFaceStatic(key, emotion);
+        if (key !== "front") this._drawFaceStatic(key);
       }
       this._faceDirty = false;
       this._frontDirty = true;
@@ -165,22 +166,27 @@ export class HeadRenderer {
     const colors = this._colors();
 
     if (this.faceMode === "painted" && this.paintFaces) {
-      const open = this.paintOverlayMouth && (params.mouthOpen ?? 0) > 0.12;
-      // Redraw front only when something changed, or while the mouth is open,
-      // or for one frame after it closes (to clear the overlay).
-      if (this._frontDirty || open || this._lastOpen) {
-        const set = this.paintFaces.front || {};
-        const grid = set[emotion] || set.neutral || null;
-        if (grid) drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
-        else {
+      // Redraw the rigged front face only when the animation state changes
+      // (emotion, blink, mouth open) — keeps idle frame rate high.
+      const hash =
+        emotion +
+        "|" + Math.round((params.blinkL ?? 0) * 8) +
+        "|" + Math.round((params.blinkR ?? 0) * 8) +
+        "|" + Math.round((params.mouthOpen ?? 0) * 8) +
+        "|" + Math.round((params.intensity ?? 0) * 8);
+      if (this._frontDirty || hash !== this._frontHash) {
+        const layers = this.paintFaces.front;
+        const has = layers && (layers.base || layers.brows || layers.eyes || layers.mouth);
+        if (has) {
+          drawRiggedFace(f.ctx, size, layers, this.paintGridN, params, this.colors.face);
+        } else {
           f.ctx.fillStyle = this.colors.cube;
           f.ctx.fillRect(0, 0, size, size);
         }
-        if (open) drawMouthLayer(f.ctx, size, { colors, ...params });
         f.texture.needsUpdate = true;
         this._frontDirty = false;
+        this._frontHash = hash;
       }
-      this._lastOpen = open;
     } else {
       // procedural face animates continuously
       drawPixelFace(f.ctx, size, { colors, ...params });

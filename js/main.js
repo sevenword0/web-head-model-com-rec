@@ -5,9 +5,10 @@
 // the network.
 import { Recorder } from "./recorder.js";
 import { analyzeEmotion, synthesizeBlendshapes, EMOTIONS } from "./emotion.js";
-import { drawPixelFace, drawPaintedFace, drawMouthLayer } from "./pixelFace.js";
+import { drawPixelFace } from "./pixelFace.js";
+import { drawLayeredStatic, REGIONS } from "./faceRig.js";
 import * as Settings from "./settings.js";
-import { buildSteveGrid } from "./settings.js";
+import { buildSteveLayers, LAYER_KEYS } from "./settings.js";
 
 const PALETTE = [
   "#f1c27d", "#d9a066", "#8d5524", "#ffffff", "#000000",
@@ -47,7 +48,7 @@ class App {
     this._erasing = false;
     this._picking = false; // eyedropper mode
     this._selFace = "front"; // which cube face is being painted
-    this._selEmo = "neutral"; // which expression is being painted
+    this._selLayer = "base"; // which layer is being painted
     // normalize any stored grids to the current grid size
     this.resampleAllGrids(this.state.gridN);
 
@@ -371,9 +372,8 @@ class App {
       mouthWide: 1,
     };
     if (this.state.faceMode === "painted") {
-      // Preview shows the currently selected face+expression art.
-      const grid = this.getGrid(this._selFace, this._selEmo, false);
-      drawPaintedFace(ctx, c.width, grid, this.state.gridN, this.state.faceColor);
+      // Preview shows the assembled (static) layers of the current face.
+      drawLayeredStatic(ctx, c.width, this.state.paintFaces[this._selFace], this.state.gridN, this.state.faceColor);
     } else {
       drawPixelFace(ctx, c.width, mouthParams);
     }
@@ -405,42 +405,35 @@ class App {
     );
   }
 
-  // Return the grid for face+emotion. If `create`, store it back.
-  // A not-yet-drawn non-neutral expression starts from a COPY of the neutral
-  // face (the base expression) so editing begins from the base, not blank.
-  getGrid(face, emo, create) {
+  // Return the grid for a face's layer. If `create`, allocate/store a blank one.
+  getLayer(face, layer, create) {
     const N = this.state.gridN;
     const need = N * N;
     const set = (this.state.paintFaces[face] = this.state.paintFaces[face] || {});
-    let grid = set[emo];
-
-    // Existing grid (resample if size changed).
+    let grid = set[layer];
     if (Array.isArray(grid)) {
       if (grid.length !== need) {
         grid = resampleGrid(grid, Math.round(Math.sqrt(grid.length)), N);
-        if (create) set[emo] = grid;
+        if (create) set[layer] = grid;
       }
       return grid;
     }
-
-    // Missing: base on the neutral face for non-neutral expressions.
-    let base = null;
-    if (emo !== "neutral" && Array.isArray(set.neutral)) {
-      base = resampleGrid(set.neutral, Math.round(Math.sqrt(set.neutral.length)), N);
+    if (create) {
+      grid = new Array(need).fill(null);
+      set[layer] = grid;
+      return grid;
     }
-    if (!base) base = new Array(need).fill(null);
-    if (create) set[emo] = base;
-    return base;
+    return null;
   }
 
-  // Resample every stored grid to the current gridN (called when gridN changes).
+  // Resample every stored layer grid to the current gridN.
   resampleAllGrids(newN) {
     for (const face of Object.keys(this.state.paintFaces)) {
       const set = this.state.paintFaces[face];
-      for (const emo of Object.keys(set)) {
-        const g = set[emo];
+      for (const layer of Object.keys(set)) {
+        const g = set[layer];
         if (Array.isArray(g) && g.length !== newN * newN) {
-          set[emo] = resampleGrid(g, Math.round(Math.sqrt(g.length)), newN);
+          set[layer] = resampleGrid(g, Math.round(Math.sqrt(g.length)), newN);
         }
       }
     }
@@ -452,10 +445,14 @@ class App {
     const ctx = c.getContext("2d");
     const N = this.state.gridN;
     const u = c.width / N;
+    const W = c.width, H = c.height;
     ctx.fillStyle = this.state.faceColor;
-    ctx.fillRect(0, 0, c.width, c.height);
-    const grid = this.getGrid(this._selFace, this._selEmo, false);
-    if (grid) {
+    ctx.fillRect(0, 0, W, H);
+
+    const set = this.state.paintFaces[this._selFace] || {};
+    const drawGrid = (grid, alpha) => {
+      if (!grid) return;
+      ctx.globalAlpha = alpha;
       for (let y = 0; y < N; y++) {
         for (let x = 0; x < N; x++) {
           const col = grid[y * N + x];
@@ -464,15 +461,35 @@ class App {
           ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(u), Math.ceil(u));
         }
       }
+      ctx.globalAlpha = 1;
+    };
+    // onion-skin: other layers faint, current layer full
+    for (const layer of LAYER_KEYS) {
+      if (layer === this._selLayer) continue;
+      drawGrid(set[layer], 0.35);
     }
-    // thin, faint grid lines so the art reads clearly
+    drawGrid(set[this._selLayer], 1);
+
+    // thin, faint grid lines
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
     ctx.lineWidth = 0.5;
     for (let i = 0; i <= N; i++) {
       const p = Math.round(i * u) + 0.5;
-      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, c.height); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(c.width, p); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, H); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(W, p); ctx.stroke();
     }
+
+    // region guides for brows / eyes / mouth
+    const drawRegion = (r, color, active) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = active ? 2 : 1;
+      ctx.setLineDash(active ? [] : [6, 5]);
+      ctx.strokeRect(r.x0 * W, r.y0 * H, (r.x1 - r.x0) * W, (r.y1 - r.y0) * H);
+    };
+    drawRegion(REGIONS.brows, "rgba(120,180,255,0.7)", this._selLayer === "brows");
+    drawRegion(REGIONS.eyes, "rgba(120,255,170,0.7)", this._selLayer === "eyes");
+    drawRegion(REGIONS.mouth, "rgba(255,150,150,0.7)", this._selLayer === "mouth");
+    ctx.setLineDash([]);
   }
 
   paintAt(clientX, clientY) {
@@ -485,7 +502,7 @@ class App {
 
     // Eyedropper: pick the colour under the cursor instead of painting.
     if (this._picking) {
-      const g = this.getGrid(this._selFace, this._selEmo, false);
+      const g = this.getLayer(this._selFace, this._selLayer, false);
       const col = (g && g[y * N + x]) || this.state.faceColor;
       this._paintColor = col;
       this._erasing = false;
@@ -497,7 +514,7 @@ class App {
       return;
     }
 
-    const grid = this.getGrid(this._selFace, this._selEmo, true);
+    const grid = this.getLayer(this._selFace, this._selLayer, true);
     grid[y * N + x] = this._erasing ? null : this._paintColor;
     this.repaintEditor();
     this.syncPaintToHead();
@@ -538,14 +555,13 @@ class App {
         this.renderPreview();
       })
     );
-    // expression selector
-    document.querySelectorAll("[data-emo]").forEach((b) =>
+    // layer selector
+    document.querySelectorAll("[data-layer]").forEach((b) =>
       b.addEventListener("click", () => {
-        document.querySelectorAll("[data-emo]").forEach((x) => x.classList.remove("active"));
+        document.querySelectorAll("[data-layer]").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
-        this._selEmo = b.dataset.emo;
+        this._selLayer = b.dataset.layer;
         this.repaintEditor();
-        this.renderPreview();
       })
     );
 
@@ -580,7 +596,7 @@ class App {
     });
     $("fillBtn").addEventListener("click", () => {
       const N = this.state.gridN;
-      this.state.paintFaces[this._selFace][this._selEmo] =
+      this.state.paintFaces[this._selFace][this._selLayer] =
         new Array(N * N).fill(this._erasing ? null : this._paintColor);
       this.repaintEditor();
       this.syncPaintToHead();
@@ -588,29 +604,27 @@ class App {
       this.autosave();
     });
     $("clearPaintBtn").addEventListener("click", () => {
-      const N = this.state.gridN;
-      // Neutral clears to blank; other expressions revert to the neutral base.
-      this.state.paintFaces[this._selFace][this._selEmo] =
-        this._selEmo === "neutral" ? new Array(N * N).fill(null) : null;
+      // Clear only the currently selected layer.
+      this.state.paintFaces[this._selFace][this._selLayer] = null;
       this.repaintEditor();
       this.syncPaintToHead();
       this.renderPreview();
       this.autosave();
     });
     $("steveBtn").addEventListener("click", () => {
-      // Load the built-in Minecraft Steve face onto the current face+expression.
+      // Load the built-in Minecraft Steve layered face onto the current face.
       this.state.faceMode = "painted";
       this.state.gridN = 8;
       this.resampleAllGrids(8);
-      this.state.paintFaces[this._selFace][this._selEmo] = buildSteveGrid();
+      this.state.paintFaces[this._selFace] = buildSteveLayers();
       this.state.faceColor = Settings.STEVE_SKIN;
       $("faceColor").value = Settings.STEVE_SKIN;
+      $("gridN").value = 8;
+      $("gridNVal").textContent = 8;
       document.querySelectorAll("[data-facemode]").forEach((x) =>
         x.classList.toggle("active", x.dataset.facemode === "painted")
       );
       $("paintEditor").classList.remove("disabled");
-      $("gridN").value = 8;
-      $("gridNVal").textContent = 8;
       this.syncColorsToHead();
       this.repaintEditor();
       this.renderPreview();
@@ -859,14 +873,14 @@ class App {
     $("gridN").value = s.gridN;
     $("gridNVal").textContent = s.gridN;
     $("overlayMouthToggle").checked = s.paintOverlayMouth;
-    // reset paint selectors to front / neutral
+    // reset paint selectors to front / base
     this._selFace = "front";
-    this._selEmo = "neutral";
+    this._selLayer = "base";
     document.querySelectorAll("[data-face]").forEach((x) =>
       x.classList.toggle("active", x.dataset.face === "front")
     );
-    document.querySelectorAll("[data-emo]").forEach((x) =>
-      x.classList.toggle("active", x.dataset.emo === "neutral")
+    document.querySelectorAll("[data-layer]").forEach((x) =>
+      x.classList.toggle("active", x.dataset.layer === "base")
     );
 
     this.syncColorsToHead();
