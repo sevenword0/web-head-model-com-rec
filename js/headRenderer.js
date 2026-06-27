@@ -57,9 +57,11 @@ export class HeadRenderer {
 
     // Painted-face state
     this.faceMode = "procedural"; // 'procedural' | 'painted'
-    this.paintGrid = null; // Array<string|null>
-    this.paintGridN = 16;
+    this.paintFaces = null; // { face: { emotion: grid|null } }
+    this.paintGridN = 8;
     this.paintOverlayMouth = true;
+    this._faceDirty = true; // redraw static (non-front) faces
+    this._lastEmotion = null;
 
     this._buildCube();
 
@@ -74,24 +76,31 @@ export class HeadRenderer {
     this.refreshCubeColors();
   }
 
-  // ---------- Cube head with pixel-face canvas texture ----------
+  // ---------- Cube head with per-face canvas textures ----------
   _buildCube() {
-    const tex = document.createElement("canvas");
-    tex.width = 256;
-    tex.height = 256;
-    this.faceCanvas = tex;
-    this.faceCtx = tex.getContext("2d");
-    this.faceTexture = new THREE.CanvasTexture(tex);
-    this.faceTexture.colorSpace = THREE.SRGBColorSpace;
-    this.faceTexture.magFilter = THREE.NearestFilter;
-    this.faceTexture.minFilter = THREE.LinearFilter;
+    // BoxGeometry material order: +x(right), -x(left), +y(top), -y(bottom), +z(front), -z(back)
+    this.FACE_INDEX = { right: 0, left: 1, top: 2, bottom: 3, front: 4, back: 5 };
+    this.faces = {}; // faceKey -> {canvas, ctx, texture, material}
 
-    const side = new THREE.MeshStandardMaterial({ color: 0xd9a066, roughness: 0.9 });
-    this.sideMat = side;
-    const faceMat = new THREE.MeshStandardMaterial({ map: this.faceTexture, roughness: 0.85 });
+    const mats = new Array(6);
+    for (const [key, idx] of Object.entries(this.FACE_INDEX)) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext("2d");
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.LinearFilter;
+      const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85 });
+      this.faces[key] = { canvas, ctx, texture, material };
+      mats[idx] = material;
+    }
+    // Convenience handle to the front face (used by procedural drawing).
+    this.faceCanvas = this.faces.front.canvas;
+    this.faceCtx = this.faces.front.ctx;
+    this.faceTexture = this.faces.front.texture;
 
-    // BoxGeometry material order: +x, -x, +y, -y, +z(front), -z
-    const mats = [side, side, side, side, faceMat, side];
     const geo = new THREE.BoxGeometry(1, 1, 1);
     this.cube = new THREE.Mesh(geo, mats);
     this.cubeGroup = new THREE.Group();
@@ -99,39 +108,87 @@ export class HeadRenderer {
   }
 
   refreshCubeColors() {
-    if (this.sideMat) this.sideMat.color.set(this.colors.cube);
+    this._faceDirty = true;
   }
 
-  /** Redraw the pixel face texture (procedural emotion face or painted grid). */
-  updateFace(params) {
-    const size = this.faceCanvas.width;
-    const colors = {
+  // Draw a single cube face's static content for a given emotion.
+  _drawFaceStatic(key, emotion) {
+    const f = this.faces[key];
+    const size = f.canvas.width;
+    if (this.faceMode === "painted" && this.paintFaces) {
+      const set = this.paintFaces[key] || {};
+      const grid = set[emotion] || set.neutral || null;
+      if (grid) {
+        drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
+      } else {
+        f.ctx.fillStyle = this.colors.cube;
+        f.ctx.fillRect(0, 0, size, size);
+      }
+    } else {
+      // procedural: only the front carries the drawn face; sides are solid.
+      f.ctx.fillStyle = this.colors.cube;
+      f.ctx.fillRect(0, 0, size, size);
+    }
+    f.texture.needsUpdate = true;
+  }
+
+  _colors() {
+    return {
       face: this.colors.face,
       eye: this.colors.eye,
       brow: this.colors.brow,
       mouth: this.colors.mouth,
       cheek: this.colors.cheek,
     };
-    if (this.faceMode === "painted" && this.paintGrid) {
-      drawPaintedFace(this.faceCtx, size, this.paintGrid, this.paintGridN, this.colors.face);
-      // Keep the static painted mouth at rest; only overlay an animated mouth
-      // when actually speaking (mouth open), so custom art stays clean.
+  }
+
+  /** Redraw the cube face textures. Sides are redrawn only when dirty; the
+   *  front is redrawn every frame so the mouth / expression animates. */
+  updateFace(params) {
+    const emotion = params.emotion || "neutral";
+    if (emotion !== this._lastEmotion) {
+      this._lastEmotion = emotion;
+      this._faceDirty = true;
+    }
+
+    if (this._faceDirty) {
+      for (const key of Object.keys(this.faces)) {
+        if (key !== "front") this._drawFaceStatic(key, emotion);
+      }
+      this._faceDirty = false;
+    }
+
+    // Front face (dynamic).
+    const f = this.faces.front;
+    const size = f.canvas.width;
+    const colors = this._colors();
+    if (this.faceMode === "painted" && this.paintFaces) {
+      const set = this.paintFaces.front || {};
+      const grid = set[emotion] || set.neutral || null;
+      if (grid) drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
+      else {
+        f.ctx.fillStyle = this.colors.cube;
+        f.ctx.fillRect(0, 0, size, size);
+      }
+      // Animated speaking mouth over custom art (only while mouth is open).
       if (this.paintOverlayMouth && (params.mouthOpen ?? 0) > 0.12) {
-        drawMouthLayer(this.faceCtx, size, { colors, ...params });
+        drawMouthLayer(f.ctx, size, { colors, ...params });
       }
     } else {
-      drawPixelFace(this.faceCtx, size, { colors, ...params });
+      drawPixelFace(f.ctx, size, { colors, ...params });
     }
-    this.faceTexture.needsUpdate = true;
+    f.texture.needsUpdate = true;
   }
 
   setFaceMode(mode) {
+    if (mode !== this.faceMode) this._faceDirty = true;
     this.faceMode = mode;
   }
 
-  setPaintGrid(grid, gridN) {
-    this.paintGrid = grid;
+  setPaintData(paintFaces, gridN) {
+    this.paintFaces = paintFaces;
     if (gridN) this.paintGridN = gridN;
+    this._faceDirty = true;
   }
 
   setColors(c) {

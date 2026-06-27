@@ -172,8 +172,29 @@
 
         <div id="paintEditor" class="paint-editor disabled">
           <div class="field">
-            <label>격자 크기 <span class="val" id="gridNVal">16</span></label>
-            <input type="range" id="gridN" min="8" max="32" step="4" value="16" />
+            <label>그릴 면 선택</label>
+            <div class="seg sel" id="faceSel">
+              <button class="seg-btn active" data-face="front">앞</button>
+              <button class="seg-btn" data-face="back">뒤</button>
+              <button class="seg-btn" data-face="left">왼</button>
+              <button class="seg-btn" data-face="right">오른</button>
+              <button class="seg-btn" data-face="top">위</button>
+              <button class="seg-btn" data-face="bottom">아래</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>그릴 표정 선택 <small class="hint" style="display:inline">(앞면 기준 감정별 얼굴)</small></label>
+            <div class="seg sel" id="emoSel">
+              <button class="seg-btn active" data-emo="neutral">중립</button>
+              <button class="seg-btn" data-emo="happy">기쁨</button>
+              <button class="seg-btn" data-emo="sad">슬픔</button>
+              <button class="seg-btn" data-emo="angry">분노</button>
+              <button class="seg-btn" data-emo="surprised">놀람</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>격자 크기 <span class="val" id="gridNVal">8</span></label>
+            <input type="range" id="gridN" min="8" max="32" step="4" value="8" />
           </div>
           <div class="palette" id="palette"></div>
           <div class="paint-tools">

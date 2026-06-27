@@ -21,6 +21,26 @@ export function buildSteveGrid() {
   ];
 }
 
+// Cube faces and emotions used by the per-face / per-expression painting.
+export const FACE_KEYS = ["front", "back", "left", "right", "top", "bottom"];
+export const FACE_LABELS = { front: "앞", back: "뒤", left: "왼쪽", right: "오른쪽", top: "위", bottom: "아래" };
+export const EMO_KEYS = ["neutral", "happy", "sad", "angry", "surprised"];
+export const EMO_LABELS = { neutral: "중립", happy: "기쁨", sad: "슬픔", angry: "분노", surprised: "놀람" };
+
+function emptyEmotionSet() {
+  const o = {};
+  for (const e of EMO_KEYS) o[e] = null;
+  return o;
+}
+
+// Build the default paint set: Steve on the front (neutral), everything else empty.
+export function buildDefaultPaintFaces() {
+  const faces = {};
+  for (const f of FACE_KEYS) faces[f] = emptyEmotionSet();
+  faces.front.neutral = buildSteveGrid();
+  return faces;
+}
+
 export const DEFAULTS = {
   headType: "cube",
   mirror: true,
@@ -44,21 +64,52 @@ export const DEFAULTS = {
   browColor: "#46352b",
   mouthColor: "#6c4f33",
   cheekColor: "#e88f8f",
-  // painted face (grid pixel painting) — defaults to a Minecraft Steve face
+  // painted faces (grid pixel painting) — per cube face × per expression
   faceMode: "painted", // 'procedural' | 'painted'
   gridN: 8,
-  paintGrid: buildSteveGrid(), // Array<string|null> length gridN*gridN
+  paintFaces: buildDefaultPaintFaces(),
   paintOverlayMouth: true,
   // capture
   audio: true,
   showVideo: true,
 };
 
+// Ensure a settings object has a well-formed paintFaces structure (and migrate
+// the old single `paintGrid` field into front/neutral).
+export function normalizeSettings(s) {
+  if (!s.paintFaces || typeof s.paintFaces !== "object") {
+    s.paintFaces = buildDefaultPaintFaces();
+    if (Array.isArray(s.paintGrid)) {
+      for (const f of FACE_KEYS) s.paintFaces[f] = emptyEmotionSet();
+      s.paintFaces.front.neutral = s.paintGrid;
+    }
+  } else {
+    for (const f of FACE_KEYS) {
+      if (!s.paintFaces[f] || typeof s.paintFaces[f] !== "object") {
+        s.paintFaces[f] = emptyEmotionSet();
+      } else {
+        for (const e of EMO_KEYS) {
+          if (!(e in s.paintFaces[f])) s.paintFaces[f][e] = null;
+        }
+      }
+    }
+  }
+  delete s.paintGrid;
+  return s;
+}
+
+// A fresh default state with its own (non-shared) paintFaces object.
+export function freshDefaults() {
+  return normalizeSettings({ ...DEFAULTS, paintFaces: undefined });
+}
+
 export function loadSettings() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    // paintFaces:undefined first so a saved value overrides; otherwise normalize
+    // allocates a fresh one instead of sharing DEFAULTS.paintFaces.
+    return normalizeSettings({ ...DEFAULTS, paintFaces: undefined, ...JSON.parse(raw) });
   } catch {
     return null;
   }
@@ -109,7 +160,7 @@ export function importJSON(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        resolve({ ...DEFAULTS, ...JSON.parse(reader.result) });
+        resolve(normalizeSettings({ ...DEFAULTS, paintFaces: undefined, ...JSON.parse(reader.result) }));
       } catch (e) {
         reject(e);
       }
