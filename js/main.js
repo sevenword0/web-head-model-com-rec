@@ -5,8 +5,15 @@
 // the network.
 import { Recorder } from "./recorder.js";
 import { analyzeEmotion, synthesizeBlendshapes, EMOTIONS } from "./emotion.js";
-import { drawPixelFace } from "./pixelFace.js";
+import { drawPixelFace, drawPaintedFace, drawMouthLayer } from "./pixelFace.js";
 import * as Settings from "./settings.js";
+
+const PALETTE = [
+  "#f1c27d", "#d9a066", "#8d5524", "#ffffff", "#000000",
+  "#2b2b2b", "#b5403a", "#ff5b5b", "#ff9f43", "#feca57",
+  "#1dd1a1", "#10ac84", "#54a0ff", "#2e86de", "#5f27cd",
+  "#e88f8f", "#ff9ff3", "#c8d6e5", "#576574", "#222f3e",
+];
 
 const EMO_LABEL = {
   neutral: "😐 중립",
@@ -34,8 +41,14 @@ class App {
     this.lastResult = null;
     this.running = false;
 
+    this._paintColor = this.state.faceColor || PALETTE[0];
+    this._erasing = false;
+
+    this.buildPalette();
     this.bindUI();
+    this.bindPaintEditor();
     this.applyStateToUI();
+    this.repaintEditor();
     this.renderPreview();
     this.renderPresetList();
   }
@@ -71,6 +84,8 @@ class App {
     const h = this.video.videoHeight || 720;
     this.outCanvas.width = w;
     this.outCanvas.height = h;
+    // Match the stage (output) aspect ratio to the actual webcam input.
+    $("stageInner").style.aspectRatio = `${w} / ${h}`;
 
     // Dynamically load the heavy CDN-backed modules now.
     this.setStatus("3D 엔진 로딩 중…");
@@ -311,23 +326,185 @@ class App {
       mouth: this.state.mouthColor,
       cheek: this.state.cheekColor,
     });
+    this.syncPaintToHead();
+  }
+
+  syncPaintToHead() {
+    if (!this.head) return;
+    this.head.setFaceMode(this.state.faceMode);
+    this.head.paintOverlayMouth = this.state.paintOverlayMouth;
+    this.head.setPaintGrid(this.state.paintGrid, this.state.gridN);
   }
 
   renderPreview() {
     const c = $("facePreview");
     const ctx = c.getContext("2d");
-    drawPixelFace(ctx, c.width, {
-      colors: {
-        face: this.state.faceColor,
-        eye: this.state.eyeColor,
-        brow: this.state.browColor,
-        mouth: this.state.mouthColor,
-        cheek: this.state.cheekColor,
-      },
+    const colors = {
+      face: this.state.faceColor,
+      eye: this.state.eyeColor,
+      brow: this.state.browColor,
+      mouth: this.state.mouthColor,
+      cheek: this.state.cheekColor,
+    };
+    const mouthParams = {
+      colors,
       emotion: this.state.emotionMode === "manual" ? this.state.manualEmotion : "happy",
       intensity: this.state.intensity,
       mouthOpen: 0.3,
       mouthWide: 1,
+    };
+    if (this.state.faceMode === "painted" && this.state.paintGrid) {
+      drawPaintedFace(ctx, c.width, this.state.paintGrid, this.state.gridN, this.state.faceColor);
+      if (this.state.paintOverlayMouth) drawMouthLayer(ctx, c.width, mouthParams);
+    } else {
+      drawPixelFace(ctx, c.width, mouthParams);
+    }
+  }
+
+  // ============ Paint editor (grid pixel painting) ============
+  buildPalette() {
+    const wrap = $("palette");
+    wrap.innerHTML = "";
+    for (const col of PALETTE) {
+      const sw = document.createElement("div");
+      sw.className = "sw";
+      sw.style.background = col;
+      sw.dataset.col = col;
+      sw.addEventListener("click", () => {
+        this._erasing = false;
+        this._paintColor = col;
+        $("paintColor").value = col;
+        this.markActiveSwatch(col);
+      });
+      wrap.appendChild(sw);
+    }
+    this.markActiveSwatch(this._paintColor);
+  }
+
+  markActiveSwatch(col) {
+    document.querySelectorAll("#palette .sw").forEach((s) =>
+      s.classList.toggle("active", !this._erasing && s.dataset.col === col)
+    );
+  }
+
+  ensurePaintGrid() {
+    const N = this.state.gridN;
+    const need = N * N;
+    const old = this.state.paintGrid;
+    if (Array.isArray(old) && old.length === need) return old;
+    const oldN = Array.isArray(old) ? Math.round(Math.sqrt(old.length)) : 0;
+    this.state.paintGrid = resampleGrid(old, oldN, N);
+    return this.state.paintGrid;
+  }
+
+  repaintEditor() {
+    const c = $("paintCanvas");
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    const N = this.state.gridN;
+    const u = c.width / N;
+    ctx.fillStyle = this.state.faceColor;
+    ctx.fillRect(0, 0, c.width, c.height);
+    const grid = this.state.paintGrid;
+    if (grid) {
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          const col = grid[y * N + x];
+          if (!col) continue;
+          ctx.fillStyle = col;
+          ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(u), Math.ceil(u));
+        }
+      }
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= N; i++) {
+      const p = Math.round(i * u) + 0.5;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, c.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(c.width, p); ctx.stroke();
+    }
+  }
+
+  paintAt(clientX, clientY) {
+    const c = $("paintCanvas");
+    const rect = c.getBoundingClientRect();
+    const N = this.state.gridN;
+    const x = Math.floor(((clientX - rect.left) / rect.width) * N);
+    const y = Math.floor(((clientY - rect.top) / rect.height) * N);
+    if (x < 0 || y < 0 || x >= N || y >= N) return;
+    const grid = this.ensurePaintGrid();
+    grid[y * N + x] = this._erasing ? null : this._paintColor;
+    this.repaintEditor();
+    this.syncPaintToHead();
+    this.renderPreview();
+    this.autosave();
+  }
+
+  bindPaintEditor() {
+    const c = $("paintCanvas");
+    let painting = false;
+    const down = (e) => { painting = true; this.paintAt(e.clientX ?? e.touches[0].clientX, e.clientY ?? e.touches[0].clientY); e.preventDefault(); };
+    const move = (e) => { if (!painting) return; const t = e.touches ? e.touches[0] : e; this.paintAt(t.clientX, t.clientY); e.preventDefault(); };
+    const up = () => { painting = false; };
+    c.addEventListener("pointerdown", down);
+    c.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+
+    document.querySelectorAll("[data-facemode]").forEach((b) =>
+      b.addEventListener("click", () => {
+        document.querySelectorAll("[data-facemode]").forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        this.state.faceMode = b.dataset.facemode;
+        if (this.state.faceMode === "painted") this.ensurePaintGrid();
+        $("paintEditor").classList.toggle("disabled", this.state.faceMode !== "painted");
+        this.syncPaintToHead();
+        this.renderPreview();
+        this.autosave();
+      })
+    );
+
+    $("gridN").addEventListener("input", (e) => {
+      const N = parseInt(e.target.value, 10);
+      this.state.gridN = N;
+      $("gridNVal").textContent = N;
+      this.ensurePaintGrid();
+      this.repaintEditor();
+      this.syncPaintToHead();
+      this.renderPreview();
+      this.autosave();
+    });
+
+    $("paintColor").addEventListener("input", (e) => {
+      this._erasing = false;
+      this._paintColor = e.target.value;
+      this.markActiveSwatch(this._paintColor);
+    });
+    $("eraserBtn").addEventListener("click", () => {
+      this._erasing = !this._erasing;
+      $("eraserBtn").classList.toggle("primary", this._erasing);
+      this.markActiveSwatch(this._paintColor);
+    });
+    $("fillBtn").addEventListener("click", () => {
+      const N = this.state.gridN;
+      this.state.paintGrid = new Array(N * N).fill(this._erasing ? null : this._paintColor);
+      this.repaintEditor();
+      this.syncPaintToHead();
+      this.renderPreview();
+      this.autosave();
+    });
+    $("clearPaintBtn").addEventListener("click", () => {
+      const N = this.state.gridN;
+      this.state.paintGrid = new Array(N * N).fill(null);
+      this.repaintEditor();
+      this.syncPaintToHead();
+      this.renderPreview();
+      this.autosave();
+    });
+    $("overlayMouthToggle").addEventListener("change", (e) => {
+      this.state.paintOverlayMouth = e.target.checked;
+      this.syncPaintToHead();
+      this.renderPreview();
+      this.autosave();
     });
   }
 
@@ -555,8 +732,18 @@ class App {
     $("mouthColor").value = s.mouthColor;
     $("cheekColor").value = s.cheekColor;
 
+    // paint editor state
+    document.querySelectorAll("[data-facemode]").forEach((x) =>
+      x.classList.toggle("active", x.dataset.facemode === s.faceMode)
+    );
+    $("paintEditor").classList.toggle("disabled", s.faceMode !== "painted");
+    $("gridN").value = s.gridN;
+    $("gridNVal").textContent = s.gridN;
+    $("overlayMouthToggle").checked = s.paintOverlayMouth;
+
     this.syncColorsToHead();
     if (this.head) this.head.setHeadType(s.headType === "glb" && this.head.hasGLB() ? "glb" : "cube");
+    this.repaintEditor();
     this.renderPreview();
   }
 
@@ -601,6 +788,20 @@ class App {
     clearTimeout(this._auto);
     this._auto = setTimeout(() => Settings.saveSettings(this.state), 400);
   }
+}
+
+// Nearest-neighbour resample of a paint grid when the grid resolution changes.
+function resampleGrid(old, oldN, newN) {
+  const out = new Array(newN * newN).fill(null);
+  if (!old || !oldN) return out;
+  for (let y = 0; y < newN; y++) {
+    for (let x = 0; x < newN; x++) {
+      const sx = Math.min(oldN - 1, Math.floor((x * oldN) / newN));
+      const sy = Math.min(oldN - 1, Math.floor((y * oldN) / newN));
+      out[y * newN + x] = old[sy * oldN + sx] || null;
+    }
+  }
+  return out;
 }
 
 window.addEventListener("DOMContentLoaded", () => {

@@ -26,6 +26,11 @@ export const DEFAULTS = {
   browColor: "#5a3a1a",
   mouthColor: "#b5403a",
   cheekColor: "#e88f8f",
+  // painted face (grid pixel painting)
+  faceMode: "procedural", // 'procedural' | 'painted'
+  gridN: 16,
+  paintGrid: null, // Array<string|null> length gridN*gridN
+  paintOverlayMouth: true,
   // capture
   audio: true,
   showVideo: true,

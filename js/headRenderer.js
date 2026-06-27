@@ -2,7 +2,7 @@
 // GLB model, aligned onto the tracked face using landmarks + head-pose matrix.
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { drawPixelFace } from "./pixelFace.js";
+import { drawPixelFace, drawPaintedFace, drawMouthLayer } from "./pixelFace.js";
 
 // Landmark indices (MediaPipe FaceMesh)
 const L = {
@@ -55,6 +55,12 @@ export class HeadRenderer {
     this.headType = "cube";
     this.morphTargets = []; // {mesh, index, name}
 
+    // Painted-face state
+    this.faceMode = "procedural"; // 'procedural' | 'painted'
+    this.paintGrid = null; // Array<string|null>
+    this.paintGridN = 16;
+    this.paintOverlayMouth = true;
+
     this._buildCube();
 
     this.colors = {
@@ -96,19 +102,35 @@ export class HeadRenderer {
     if (this.sideMat) this.sideMat.color.set(this.colors.cube);
   }
 
-  /** Redraw the pixel face texture. */
+  /** Redraw the pixel face texture (procedural emotion face or painted grid). */
   updateFace(params) {
-    drawPixelFace(this.faceCtx, this.faceCanvas.width, {
-      colors: {
-        face: this.colors.face,
-        eye: this.colors.eye,
-        brow: this.colors.brow,
-        mouth: this.colors.mouth,
-        cheek: this.colors.cheek,
-      },
-      ...params,
-    });
+    const size = this.faceCanvas.width;
+    const colors = {
+      face: this.colors.face,
+      eye: this.colors.eye,
+      brow: this.colors.brow,
+      mouth: this.colors.mouth,
+      cheek: this.colors.cheek,
+    };
+    if (this.faceMode === "painted" && this.paintGrid) {
+      drawPaintedFace(this.faceCtx, size, this.paintGrid, this.paintGridN, this.colors.face);
+      // Keep the speaking / emotion mouth animating over custom art if enabled.
+      if (this.paintOverlayMouth) {
+        drawMouthLayer(this.faceCtx, size, { colors, ...params });
+      }
+    } else {
+      drawPixelFace(this.faceCtx, size, { colors, ...params });
+    }
     this.faceTexture.needsUpdate = true;
+  }
+
+  setFaceMode(mode) {
+    this.faceMode = mode;
+  }
+
+  setPaintGrid(grid, gridN) {
+    this.paintGrid = grid;
+    if (gridN) this.paintGridN = gridN;
   }
 
   setColors(c) {
@@ -207,19 +229,25 @@ export class HeadRenderer {
 
     const le = toPx(landmarks[L.leftEye]);
     const re = toPx(landmarks[L.rightEye]);
-    const chin = toPx(landmarks[L.chin]);
-    const top = toPx(landmarks[L.foreheadTop]);
-    const lc = toPx(landmarks[L.leftCheek]);
-    const rc = toPx(landmarks[L.rightCheek]);
 
-    // Center between eyes, lifted a bit toward forehead center.
-    const cx = (le.x + re.x) / 2;
-    const cy = (le.y + re.y) / 2;
+    // Head center = center of the full landmark bounding box (true head center,
+    // not the eye line), so the cube sits centered on the head.
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const lm of landmarks) {
+      const x = (mir ? 1 - lm.x : lm.x) * W;
+      const y = lm.y * H;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
 
-    // Face size: cheek-to-cheek width and forehead-to-chin height.
-    const faceW = Math.hypot(rc.x - lc.x, rc.y - lc.y);
-    const faceH = Math.hypot(chin.x - top.x, chin.y - top.y);
-    const dim = Math.max(faceW, faceH * 0.8) * 1.5 * opts.scaleMul;
+    // Head size from the bounding box.
+    const faceW = maxX - minX;
+    const faceH = maxY - minY;
+    const dim = Math.max(faceW, faceH) * 1.35 * opts.scaleMul;
 
     // Convert pixel center -> ortho coords (origin center, y up).
     const ox = cx - W / 2 + opts.offsetX;

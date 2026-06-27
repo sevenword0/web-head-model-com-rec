@@ -163,6 +163,33 @@
           <span class="hint">미리보기</span>
           <canvas id="facePreview" width="160" height="160"></canvas>
         </div>
+
+        <h3>페이스 모드</h3>
+        <div class="seg">
+          <button class="seg-btn active" data-facemode="procedural">자동 표정</button>
+          <button class="seg-btn" data-facemode="painted">직접 그리기</button>
+        </div>
+
+        <div id="paintEditor" class="paint-editor disabled">
+          <div class="field">
+            <label>격자 크기 <span class="val" id="gridNVal">16</span></label>
+            <input type="range" id="gridN" min="8" max="32" step="4" value="16" />
+          </div>
+          <div class="palette" id="palette"></div>
+          <div class="paint-tools">
+            <label class="inline-check">색
+              <input type="color" id="paintColor" value="#ff5b5b" />
+            </label>
+            <button class="btn small" id="eraserBtn">지우개</button>
+            <button class="btn small" id="fillBtn">전체 채우기</button>
+            <button class="btn small ghost" id="clearPaintBtn">비우기</button>
+          </div>
+          <canvas id="paintCanvas" width="320" height="320" class="paint-canvas"></canvas>
+          <label class="inline-check">
+            <input type="checkbox" id="overlayMouthToggle" checked /> 말하는 입모양 덧그리기
+          </label>
+          <small class="hint">칸을 클릭/드래그해 큐브 정면(머리) 얼굴을 직접 칠하세요. 이 그림도 설정에 함께 저장됩니다.</small>
+        </div>
       </div>
 
       <!-- 설정 탭 -->

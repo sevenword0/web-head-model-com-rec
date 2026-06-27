@@ -187,6 +187,18 @@ body {
 .preview-wrap { margin-top: 12px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 #facePreview { background: #000; border-radius: 8px; image-rendering: pixelated; border: 1px solid var(--border); }
 
+/* paint editor */
+.paint-editor.disabled { opacity: 0.4; pointer-events: none; }
+.palette { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.palette .sw { width: 22px; height: 22px; border-radius: 5px; border: 2px solid transparent; cursor: pointer; }
+.palette .sw.active { border-color: #fff; }
+.paint-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.paint-canvas {
+  width: 100%; max-width: 320px; aspect-ratio: 1; display: block; margin: 8px auto;
+  background: #000; border: 1px solid var(--border); border-radius: 8px;
+  image-rendering: pixelated; cursor: crosshair; touch-action: none;
+}
+
 .save-status { font-size: 0.8rem; color: var(--ok); min-height: 18px; margin-top: 8px; }
 .preset-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
 .preset-list li { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 0.82rem; }

@@ -129,6 +129,53 @@ function drawMouth(px, ctx, u, colors, emo, k, open, wide) {
   }
 }
 
+/**
+ * Draw a user-painted face from a grid of cell colors.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} size canvas pixel size (square)
+ * @param {Array<string|null>} grid  length gridN*gridN, null = transparent/bg
+ * @param {number} gridN grid resolution (e.g. 16)
+ * @param {string} bg background color filled before cells
+ */
+export function drawPaintedFace(ctx, size, grid, gridN, bg) {
+  ctx.fillStyle = bg || "#000000";
+  ctx.fillRect(0, 0, size, size);
+  if (!grid) return;
+  const u = size / gridN;
+  for (let y = 0; y < gridN; y++) {
+    for (let x = 0; x < gridN; x++) {
+      const c = grid[y * gridN + x];
+      if (!c) continue;
+      ctx.fillStyle = c;
+      ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(u), Math.ceil(u));
+    }
+  }
+}
+
+/**
+ * Draw only the dynamic mouth layer (for overlaying on a painted face so the
+ * speaking / emotion mouth still animates).
+ */
+export function drawMouthLayer(ctx, size, p) {
+  const u = size / GRID;
+  const px = (x, y, w, h, color) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(w * u), Math.ceil(h * u));
+  };
+  drawMouth(
+    px,
+    ctx,
+    u,
+    { face: p.colors.face, mouth: p.colors.mouth },
+    p.emotion || "neutral",
+    clamp01(p.intensity ?? 1),
+    clamp01(p.mouthOpen ?? 0),
+    clamp01(p.mouthWide ?? 1)
+  );
+}
+
+export { GRID };
+
 // --- color helpers ---
 function shade(hex, amt) {
   const { r, g, b } = hexToRgb(hex);
