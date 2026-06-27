@@ -20,17 +20,18 @@ function emoParams(emotion, k) {
   };
   switch (emotion) {
     case "happy":
-      p.eyeScaleY = lerp(0.62); p.mouthBend = -1.4 * k; p.browTransY = -0.2 * k; p.browInner = -0.1 * k;
+      p.eyeScaleY = lerp(0.6); p.eyeTilt = -0.5 * k; p.mouthBend = -1.6 * k;
+      p.browTransY = -0.4 * k; p.browInner = -0.4 * k;
       break;
     case "sad":
-      p.eyeTilt = 0.55 * k; p.browInner = -0.8 * k; p.browTransY = -0.15 * k; p.mouthBend = 1.1 * k;
+      p.eyeTilt = 0.9 * k; p.browInner = -1.1 * k; p.browTransY = -0.25 * k; p.mouthBend = 1.3 * k;
       break;
     case "angry":
-      p.browInner = 0.9 * k; p.browTransY = 0.35 * k; p.eyeTilt = -0.3 * k;
-      p.eyeScaleY = lerp(0.85); p.mouthBend = 0.5 * k;
+      p.browInner = 1.3 * k; p.browTransY = 0.5 * k; p.eyeTilt = -0.7 * k;
+      p.eyeScaleY = lerp(0.8); p.mouthBend = 0.6 * k;
       break;
     case "surprised":
-      p.eyeSize = lerp(1.25); p.eyeScaleY = lerp(1.2); p.browTransY = -1.15 * k; p.mouthBend = 0;
+      p.eyeSize = lerp(1.3); p.eyeScaleY = lerp(1.3); p.browTransY = -1.4 * k; p.browInner = -0.3 * k;
       break;
     default:
       break;
@@ -100,15 +101,20 @@ function drawEyes(ctx, u, grid, N, p, blinkL, blinkR) {
 function drawMouth(ctx, u, grid, N, p, mouthOpen, mouthWide) {
   const s = stats(grid, N, null); if (!s) return;
   const halfW = Math.max(s.cx - s.minX, s.maxX - s.cx) || 1;
-  const sy = 1 + clamp01(mouthOpen) * 1.4;
+  const open = clamp01(mouthOpen);
   const wide = mouthWide ?? 1;
+  // Jaw-drop model: the upper part barely moves, the lower part drops — opens
+  // the mouth without flinging it apart.
   forEachCell(grid, N, (x, y, c) => {
     const t = (x + 0.5 - s.cx) / halfW;
+    const dy = y + 0.5 - s.cy;
     const ncx = s.cx + (x + 0.5 - s.cx) * wide;
-    let ncy = s.cy + (y + 0.5 - s.cy) * sy;
-    ncy += (y + 0.5 >= s.cy ? 1 : -1) * clamp01(mouthOpen) * 1.0; // open gap
-    ncy += p.mouthBend * (t * t);                                  // bend up/down
-    fillCell(ctx, u, ncx, ncy, wide, sy, c);
+    let ncy = y + 0.5;
+    ncy += dy >= 0 ? open * 0.9 : -open * 0.25; // lower drops, upper lifts slightly
+    ncy += p.mouthBend * (t * t);               // emotion bend (smile/frown)
+    // a little vertical fatten while open so it reads as an opening, not a split
+    const ch = 1 + open * 0.3;
+    fillCell(ctx, u, ncx, ncy, wide, ch, c);
   });
 }
 
