@@ -1,7 +1,7 @@
 // Face rig: composites painted layers (base / brows / eyes / mouth) onto a cube
-// face, animating brows/eyes/mouth procedurally from emotion + blink + mouth open.
+// face. Brows / eyes / mouth are drawn as WHOLE connected shapes and moved /
+// rotated / scaled as a unit (not sliced per pixel) by emotion + blink + open.
 
-// Editor guide regions (fractions of the grid) for where to paint each layer.
 export const REGIONS = {
   brows: { x0: 0.05, y0: 0.26, x1: 0.95, y1: 0.45 },
   eyes: { x0: 0.05, y0: 0.42, x1: 0.95, y1: 0.66 },
@@ -10,28 +10,30 @@ export const REGIONS = {
 
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 
-// Per-emotion transform parameters (already scaled by intensity k).
+// Per-emotion transform parameters (scaled by intensity k).
+// Angles in radians (canvas: +θ = clockwise). Translations in grid-cell units.
 function emoParams(emotion, k) {
-  const lerp = (target) => 1 + (target - 1) * k; // for scale-like (1 = identity)
+  const lerp = (t) => 1 + (t - 1) * k;
   const p = {
-    eyeScaleY: 1, eyeSize: 1, eyeTilt: 0,   // tilt: + = outer corner down
-    browInner: 0, browTransY: 0,            // browInner: + = inner end down
-    mouthBend: 0,                            // + = frown (corners down), - = smile
+    eyeScaleY: 1, eyeSize: 1, eyeTilt: 0,   // eyeTilt: + = outer corner DOWN
+    browTilt: 0, browTransY: 0,             // browTilt: + = inner end DOWN
+    mouthDY: 0, mouthScaleX: 1,
   };
   switch (emotion) {
     case "happy":
-      p.eyeScaleY = lerp(0.6); p.eyeTilt = -0.5 * k; p.mouthBend = -1.6 * k;
-      p.browTransY = -0.4 * k; p.browInner = -0.4 * k;
+      p.eyeScaleY = lerp(0.6); p.eyeTilt = -0.28 * k; p.browTilt = -0.18 * k;
+      p.browTransY = -0.4 * k; p.mouthDY = -0.25 * k; p.mouthScaleX = lerp(1.15);
       break;
     case "sad":
-      p.eyeTilt = 0.9 * k; p.browInner = -1.1 * k; p.browTransY = -0.25 * k; p.mouthBend = 1.3 * k;
+      p.eyeTilt = 0.55 * k; p.browTilt = -0.6 * k; p.browTransY = -0.2 * k; p.mouthDY = 0.4 * k;
       break;
     case "angry":
-      p.browInner = 1.3 * k; p.browTransY = 0.5 * k; p.eyeTilt = -0.7 * k;
-      p.eyeScaleY = lerp(0.8); p.mouthBend = 0.6 * k;
+      p.browTilt = 0.75 * k; p.browTransY = 0.55 * k; p.eyeTilt = -0.5 * k;
+      p.eyeScaleY = lerp(0.8); p.mouthDY = 0.15 * k;
       break;
     case "surprised":
-      p.eyeSize = lerp(1.3); p.eyeScaleY = lerp(1.3); p.browTransY = -1.4 * k; p.browInner = -0.3 * k;
+      p.eyeSize = lerp(1.3); p.eyeScaleY = lerp(1.3); p.browTransY = -1.3 * k;
+      p.mouthDY = 0.35 * k; p.mouthScaleX = lerp(0.9);
       break;
     default:
       break;
@@ -49,98 +51,123 @@ function forEachCell(grid, N, fn) {
   }
 }
 
-// Centroid + horizontal extent of cells (optionally restricted to a side).
+// Centroid + bounds (cell units), optionally restricted to a horizontal side.
 function stats(grid, N, side) {
-  let sx = 0, sy = 0, n = 0, minX = Infinity, maxX = -Infinity;
+  let sx = 0, sy = 0, n = 0, minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   forEachCell(grid, N, (x, y) => {
     if (side === "L" && x >= N / 2) return;
     if (side === "R" && x < N / 2) return;
     sx += x + 0.5; sy += y + 0.5; n++;
-    if (x < minX) minX = x;
-    if (x > maxX) maxX = x;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
   });
   if (!n) return null;
-  return { cx: sx / n, cy: sy / n, minX, maxX, span: (maxX - minX) || 1, n };
+  return { cx: sx / n, cy: sy / n, minX, maxX, minY, maxY, n };
 }
 
-function fillCell(ctx, u, ncx, ncy, cw, ch, col) {
-  ctx.fillStyle = col;
-  ctx.fillRect((ncx - cw / 2) * u, (ncy - ch / 2) * u, Math.ceil(cw * u), Math.ceil(ch * u));
+// Reusable offscreen canvas for rendering a layer before compositing.
+let _tmp = null, _tmpCtx = null;
+function tmpCanvas(size) {
+  if (!_tmp) { _tmp = document.createElement("canvas"); _tmpCtx = _tmp.getContext("2d"); }
+  if (_tmp.width !== size) { _tmp.width = size; _tmp.height = size; }
+  _tmpCtx.clearRect(0, 0, size, size);
+  return _tmp;
 }
 
-function drawBase(ctx, u, grid, N) {
-  forEachCell(grid, N, (x, y, c) => fillCell(ctx, u, x + 0.5, y + 0.5, 1, 1, c));
-}
-
-function drawBrows(ctx, u, grid, N, p) {
-  const sides = { L: stats(grid, N, "L"), R: stats(grid, N, "R") };
+function renderGrid(ctx, grid, N, size) {
+  const u = size / N;
   forEachCell(grid, N, (x, y, c) => {
-    const side = x < N / 2 ? "L" : "R";
-    const s = sides[side]; if (!s) return;
-    const inner = side === "L" ? (x - s.minX) / s.span : (s.maxX - x) / s.span; // 1 at inner
-    let ny = (y + 0.5) + p.browTransY + p.browInner * (inner - 0.5) * 2;
-    fillCell(ctx, u, x + 0.5, ny, 1, 1, c);
+    ctx.fillStyle = c;
+    ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(u), Math.ceil(u));
   });
 }
 
-function drawEyes(ctx, u, grid, N, p, blinkL, blinkR) {
-  const sides = { L: stats(grid, N, "L"), R: stats(grid, N, "R") };
-  forEachCell(grid, N, (x, y, c) => {
-    const side = x < N / 2 ? "L" : "R";
-    const s = sides[side]; if (!s) return;
+// Composite a sub-region of `src` onto dest as a rigid transform around a pivot.
+function blit(dest, src, sxr, sw, size, piv, rot, sx, sy, dx, dy) {
+  dest.save();
+  dest.imageSmoothingEnabled = false; // keep crisp pixels
+  dest.translate(piv.x + dx, piv.y + dy);
+  if (rot) dest.rotate(rot);
+  if (sx !== 1 || sy !== 1) dest.scale(sx, sy);
+  dest.translate(-piv.x, -piv.y);
+  dest.drawImage(src, sxr, 0, sw, size, sxr, 0, sw, size);
+  dest.restore();
+}
+
+function drawBase(ctx, grid, N, size) {
+  renderGrid(ctx, grid, N, size);
+}
+
+function drawBrows(ctx, grid, N, size, p) {
+  if (!grid) return;
+  const u = size / N;
+  const tc = tmpCanvas(size);
+  renderGrid(_tmpCtx, grid, N, size);
+  const dy = p.browTransY * u;
+  for (const side of ["L", "R"]) {
+    const s = stats(grid, N, side); if (!s) continue;
+    const piv = { x: s.cx * u, y: s.cy * u };
+    const rot = side === "L" ? p.browTilt : -p.browTilt; // mirror inner-end tilt
+    blit(ctx, tc, side === "L" ? 0 : size / 2, size / 2, size, piv, rot, 1, 1, 0, dy);
+  }
+}
+
+function drawEyes(ctx, grid, N, size, p, blinkL, blinkR) {
+  if (!grid) return;
+  const tc = tmpCanvas(size);
+  renderGrid(_tmpCtx, grid, N, size);
+  for (const side of ["L", "R"]) {
+    const s = stats(grid, N, side); if (!s) continue;
+    const piv = { x: s.cx * (size / N), y: s.cy * (size / N) };
     const blink = side === "L" ? blinkL : blinkR;
+    const sy = Math.max(0.12, p.eyeSize * p.eyeScaleY * (1 - clamp01(blink) * 0.92));
     const sx = p.eyeSize;
-    const sy = (1 - clamp01(blink) * 0.95) * p.eyeScaleY * p.eyeSize;
-    const outer = side === "L" ? (s.maxX - x) / s.span : (x - s.minX) / s.span; // 1 at outer
-    const ncx = s.cx + (x + 0.5 - s.cx) * sx;
-    let ncy = s.cy + (y + 0.5 - s.cy) * sy + p.eyeTilt * (outer - 0.5) * 2;
-    fillCell(ctx, u, ncx, ncy, sx, Math.max(0.12, sy), c);
-  });
+    const rot = side === "L" ? -p.eyeTilt : p.eyeTilt; // outer-corner tilt, mirrored
+    blit(ctx, tc, side === "L" ? 0 : size / 2, size / 2, size, piv, rot, sx, sy, 0, 0);
+  }
 }
 
-function drawMouth(ctx, u, grid, N, p, mouthOpen, mouthWide) {
+function drawMouth(ctx, grid, N, size, p, mouthOpen, mouthWide) {
+  if (!grid) return;
+  const u = size / N;
   const s = stats(grid, N, null); if (!s) return;
-  const halfW = Math.max(s.cx - s.minX, s.maxX - s.cx) || 1;
-  const open = clamp01(mouthOpen);
-  const wide = mouthWide ?? 1;
-  // Jaw-drop model: the upper part barely moves, the lower part drops — opens
-  // the mouth without flinging it apart.
-  forEachCell(grid, N, (x, y, c) => {
-    const t = (x + 0.5 - s.cx) / halfW;
-    const dy = y + 0.5 - s.cy;
-    const ncx = s.cx + (x + 0.5 - s.cx) * wide;
-    let ncy = y + 0.5;
-    ncy += dy >= 0 ? open * 0.9 : -open * 0.25; // lower drops, upper lifts slightly
-    ncy += p.mouthBend * (t * t);               // emotion bend (smile/frown)
-    // a little vertical fatten while open so it reads as an opening, not a split
-    const ch = 1 + open * 0.3;
-    fillCell(ctx, u, ncx, ncy, wide, ch, c);
-  });
+  const tc = tmpCanvas(size);
+  renderGrid(_tmpCtx, grid, N, size);
+  // Jaw drop: pivot at the TOP of the mouth so scaleY opens it downward.
+  const piv = { x: s.cx * u, y: s.minY * u };
+  const sy = 1 + clamp01(mouthOpen) * 1.3; // open
+  const sx = (mouthWide ?? 1) * p.mouthScaleX; // wide / pucker + emotion width
+  const dy = p.mouthDY * u;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(piv.x, piv.y + dy);
+  ctx.scale(sx, sy);
+  ctx.translate(-piv.x, -piv.y);
+  ctx.drawImage(tc, 0, 0);
+  ctx.restore();
 }
 
 /** Composite painted layers statically (no animation) — used for cube sides. */
 export function drawLayeredStatic(ctx, size, layers, N, faceColor) {
-  const u = size / N;
   ctx.fillStyle = faceColor;
   ctx.fillRect(0, 0, size, size);
   if (!layers) return;
-  drawBase(ctx, u, layers.base, N);
-  drawBase(ctx, u, layers.brows, N);
-  drawBase(ctx, u, layers.eyes, N);
-  drawBase(ctx, u, layers.mouth, N);
+  drawBase(ctx, layers.base, N, size);
+  drawBase(ctx, layers.brows, N, size);
+  drawBase(ctx, layers.eyes, N, size);
+  drawBase(ctx, layers.mouth, N, size);
 }
 
 /** Composite + animate the front face from emotion / blink / mouth open. */
 export function drawRiggedFace(ctx, size, layers, N, params, faceColor) {
-  const u = size / N;
   ctx.fillStyle = faceColor;
   ctx.fillRect(0, 0, size, size);
   if (!layers) return;
   const emotion = params.emotion || "neutral";
   const k = clamp01(params.intensity ?? 1);
   const p = emoParams(emotion, k);
-  drawBase(ctx, u, layers.base, N);
-  drawBrows(ctx, u, layers.brows, N, p);
-  drawEyes(ctx, u, layers.eyes, N, p, params.blinkL ?? 0, params.blinkR ?? 0);
-  drawMouth(ctx, u, layers.mouth, N, p, params.mouthOpen ?? 0, params.mouthWide ?? 1);
+  drawBase(ctx, layers.base, N, size);
+  drawBrows(ctx, layers.brows, N, size, p);
+  drawEyes(ctx, layers.eyes, N, size, p, params.blinkL ?? 0, params.blinkR ?? 0);
+  drawMouth(ctx, layers.mouth, N, size, p, params.mouthOpen ?? 0, params.mouthWide ?? 1);
 }
