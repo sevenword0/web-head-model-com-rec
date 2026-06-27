@@ -40,10 +40,12 @@ class App {
     this.state = Settings.loadSettings() || Settings.freshDefaults();
     this.lastVideoTime = -1;
     this.lastResult = null;
+    this.lastSeen = 0;
     this.running = false;
 
     this._paintColor = this.state.faceColor || PALETTE[0];
     this._erasing = false;
+    this._picking = false; // eyedropper mode
     this._selFace = "front"; // which cube face is being painted
     this._selEmo = "neutral"; // which expression is being painted
     // normalize any stored grids to the current grid size
@@ -132,7 +134,13 @@ class App {
     if (v.readyState >= 2 && v.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = v.currentTime;
       try {
-        this.lastResult = this.tracker.detect(v, performance.now());
+        const r = this.tracker.detect(v, performance.now());
+        // Keep the last good result on a transient miss so the head doesn't
+        // flicker/disappear when detection drops a frame.
+        if (r) {
+          this.lastResult = r;
+          this.lastSeen = performance.now();
+        }
       } catch (e) {
         // detection can throw transiently; ignore one frame
       }
@@ -161,7 +169,11 @@ class App {
     }
     ctx.restore();
 
-    const res = this.lastResult;
+    // Use the last result for a short grace period after detection drops, so the
+    // head stays put instead of vanishing on a brief miss (e.g. centre of frame).
+    const GRACE_MS = 600;
+    const fresh = this.lastSeen && performance.now() - this.lastSeen < GRACE_MS;
+    const res = fresh ? this.lastResult : null;
     if (res && this.head) {
       // Determine blendshapes driving the face/morphs.
       const live = res.blendshapes;
@@ -470,6 +482,21 @@ class App {
     const x = Math.floor(((clientX - rect.left) / rect.width) * N);
     const y = Math.floor(((clientY - rect.top) / rect.height) * N);
     if (x < 0 || y < 0 || x >= N || y >= N) return;
+
+    // Eyedropper: pick the colour under the cursor instead of painting.
+    if (this._picking) {
+      const g = this.getGrid(this._selFace, this._selEmo, false);
+      const col = (g && g[y * N + x]) || this.state.faceColor;
+      this._paintColor = col;
+      this._erasing = false;
+      this._picking = false;
+      $("paintColor").value = col;
+      $("pickerBtn").classList.remove("primary");
+      $("eraserBtn").classList.remove("primary");
+      this.markActiveSwatch(col);
+      return;
+    }
+
     const grid = this.getGrid(this._selFace, this._selEmo, true);
     grid[y * N + x] = this._erasing ? null : this._paintColor;
     this.repaintEditor();
@@ -540,8 +567,16 @@ class App {
     });
     $("eraserBtn").addEventListener("click", () => {
       this._erasing = !this._erasing;
+      this._picking = false;
+      $("pickerBtn").classList.remove("primary");
       $("eraserBtn").classList.toggle("primary", this._erasing);
       this.markActiveSwatch(this._paintColor);
+    });
+    $("pickerBtn").addEventListener("click", () => {
+      this._picking = !this._picking;
+      this._erasing = false;
+      $("eraserBtn").classList.remove("primary");
+      $("pickerBtn").classList.toggle("primary", this._picking);
     });
     $("fillBtn").addEventListener("click", () => {
       const N = this.state.gridN;

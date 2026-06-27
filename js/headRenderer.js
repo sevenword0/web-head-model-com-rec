@@ -142,8 +142,9 @@ export class HeadRenderer {
     };
   }
 
-  /** Redraw the cube face textures. Sides are redrawn only when dirty; the
-   *  front is redrawn every frame so the mouth / expression animates. */
+  /** Redraw the cube face textures. To save GPU texture uploads (and frame
+   *  rate), sides redraw only when dirty, and in painted mode the front redraws
+   *  only on change or while speaking; procedural mode animates every frame. */
   updateFace(params) {
     const emotion = params.emotion || "neutral";
     if (emotion !== this._lastEmotion) {
@@ -156,28 +157,35 @@ export class HeadRenderer {
         if (key !== "front") this._drawFaceStatic(key, emotion);
       }
       this._faceDirty = false;
+      this._frontDirty = true;
     }
 
-    // Front face (dynamic).
     const f = this.faces.front;
     const size = f.canvas.width;
     const colors = this._colors();
+
     if (this.faceMode === "painted" && this.paintFaces) {
-      const set = this.paintFaces.front || {};
-      const grid = set[emotion] || set.neutral || null;
-      if (grid) drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
-      else {
-        f.ctx.fillStyle = this.colors.cube;
-        f.ctx.fillRect(0, 0, size, size);
+      const open = this.paintOverlayMouth && (params.mouthOpen ?? 0) > 0.12;
+      // Redraw front only when something changed, or while the mouth is open,
+      // or for one frame after it closes (to clear the overlay).
+      if (this._frontDirty || open || this._lastOpen) {
+        const set = this.paintFaces.front || {};
+        const grid = set[emotion] || set.neutral || null;
+        if (grid) drawPaintedFace(f.ctx, size, grid, this.paintGridN, this.colors.face);
+        else {
+          f.ctx.fillStyle = this.colors.cube;
+          f.ctx.fillRect(0, 0, size, size);
+        }
+        if (open) drawMouthLayer(f.ctx, size, { colors, ...params });
+        f.texture.needsUpdate = true;
+        this._frontDirty = false;
       }
-      // Animated speaking mouth over custom art (only while mouth is open).
-      if (this.paintOverlayMouth && (params.mouthOpen ?? 0) > 0.12) {
-        drawMouthLayer(f.ctx, size, { colors, ...params });
-      }
+      this._lastOpen = open;
     } else {
+      // procedural face animates continuously
       drawPixelFace(f.ctx, size, { colors, ...params });
+      f.texture.needsUpdate = true;
     }
-    f.texture.needsUpdate = true;
   }
 
   setFaceMode(mode) {
