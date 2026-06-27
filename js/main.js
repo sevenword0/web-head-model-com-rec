@@ -7,6 +7,7 @@ import { Recorder } from "./recorder.js";
 import { analyzeEmotion, synthesizeBlendshapes, EMOTIONS } from "./emotion.js";
 import { drawPixelFace, drawPaintedFace, drawMouthLayer } from "./pixelFace.js";
 import * as Settings from "./settings.js";
+import { buildSteveGrid } from "./settings.js";
 
 const PALETTE = [
   "#f1c27d", "#d9a066", "#8d5524", "#ffffff", "#000000",
@@ -354,8 +355,8 @@ class App {
       mouthWide: 1,
     };
     if (this.state.faceMode === "painted" && this.state.paintGrid) {
+      // Preview shows the static painted art (mouth overlay only animates live).
       drawPaintedFace(ctx, c.width, this.state.paintGrid, this.state.gridN, this.state.faceColor);
-      if (this.state.paintOverlayMouth) drawMouthLayer(ctx, c.width, mouthParams);
     } else {
       drawPixelFace(ctx, c.width, mouthParams);
     }
@@ -499,6 +500,25 @@ class App {
       this.syncPaintToHead();
       this.renderPreview();
       this.autosave();
+    });
+    $("steveBtn").addEventListener("click", () => {
+      // Load the built-in Minecraft Steve face (8x8) in painted mode.
+      this.state.faceMode = "painted";
+      this.state.gridN = 8;
+      this.state.paintGrid = buildSteveGrid();
+      this.state.faceColor = Settings.STEVE_SKIN;
+      $("faceColor").value = Settings.STEVE_SKIN;
+      document.querySelectorAll("[data-facemode]").forEach((x) =>
+        x.classList.toggle("active", x.dataset.facemode === "painted")
+      );
+      $("paintEditor").classList.remove("disabled");
+      $("gridN").value = 8;
+      $("gridNVal").textContent = 8;
+      this.syncColorsToHead();
+      this.repaintEditor();
+      this.renderPreview();
+      this.autosave();
+      this.flashSave("스티브 얼굴 적용 ✓");
     });
     $("overlayMouthToggle").addEventListener("change", (e) => {
       this.state.paintOverlayMouth = e.target.checked;

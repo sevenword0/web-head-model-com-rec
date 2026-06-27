@@ -114,8 +114,9 @@ export class HeadRenderer {
     };
     if (this.faceMode === "painted" && this.paintGrid) {
       drawPaintedFace(this.faceCtx, size, this.paintGrid, this.paintGridN, this.colors.face);
-      // Keep the speaking / emotion mouth animating over custom art if enabled.
-      if (this.paintOverlayMouth) {
+      // Keep the static painted mouth at rest; only overlay an animated mouth
+      // when actually speaking (mouth open), so custom art stays clean.
+      if (this.paintOverlayMouth && (params.mouthOpen ?? 0) > 0.12) {
         drawMouthLayer(this.faceCtx, size, { colors, ...params });
       }
     } else {

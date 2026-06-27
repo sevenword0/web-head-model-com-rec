@@ -3,6 +3,24 @@
 const STORAGE_KEY = "headStudio.settings";
 const PRESET_KEY = "headStudio.presets";
 
+// Minecraft Steve-style 8x8 face as a paint grid.
+// H=hair S=skin B=brow W=eyeWhite I=iris M=mouth/mustache
+export const STEVE_SKIN = "#b58868";
+export function buildSteveGrid() {
+  const H = "#4b3621", S = "#b58868", B = "#46352b",
+        W = "#e9e9e9", I = "#3f3a8c", M = "#6c4f33";
+  return [
+    H, H, H, H, H, H, H, H,
+    H, H, H, H, H, H, H, H,
+    S, S, S, S, S, S, S, S,
+    S, B, B, S, S, B, B, S,
+    S, W, I, S, S, I, W, S,
+    S, S, M, M, M, M, S, S,
+    S, S, S, M, M, S, S, S,
+    S, S, S, S, S, S, S, S,
+  ];
+}
+
 export const DEFAULTS = {
   headType: "cube",
   mirror: true,
@@ -20,16 +38,16 @@ export const DEFAULTS = {
   exprStrength: 1,
   speaking: true,
   // appearance
-  faceColor: "#f1c27d",
-  cubeColor: "#d9a066",
+  faceColor: "#b58868", // Steve skin tone by default
+  cubeColor: "#9b7253",
   eyeColor: "#2b2b2b",
-  browColor: "#5a3a1a",
-  mouthColor: "#b5403a",
+  browColor: "#46352b",
+  mouthColor: "#6c4f33",
   cheekColor: "#e88f8f",
-  // painted face (grid pixel painting)
-  faceMode: "procedural", // 'procedural' | 'painted'
-  gridN: 16,
-  paintGrid: null, // Array<string|null> length gridN*gridN
+  // painted face (grid pixel painting) — defaults to a Minecraft Steve face
+  faceMode: "painted", // 'procedural' | 'painted'
+  gridN: 8,
+  paintGrid: buildSteveGrid(), // Array<string|null> length gridN*gridN
   paintOverlayMouth: true,
   // capture
   audio: true,
