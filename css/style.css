@@ -196,7 +196,7 @@ body {
 .palette .sw.active { border-color: #fff; }
 .paint-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
 .paint-canvas {
-  width: 100%; max-width: 320px; aspect-ratio: 1; display: block; margin: 8px auto;
+  width: 100%; max-width: 640px; aspect-ratio: 1; display: block; margin: 8px auto;
   background: #000; border: 1px solid var(--border); border-radius: 8px;
   image-rendering: pixelated; cursor: crosshair; touch-action: none;
 }

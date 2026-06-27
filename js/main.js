@@ -393,25 +393,32 @@ class App {
     );
   }
 
-  // Return the grid for face+emotion. If `create`, allocate a blank grid of the
-  // right size (and resample any existing one) and store it back.
+  // Return the grid for face+emotion. If `create`, store it back.
+  // A not-yet-drawn non-neutral expression starts from a COPY of the neutral
+  // face (the base expression) so editing begins from the base, not blank.
   getGrid(face, emo, create) {
     const N = this.state.gridN;
     const need = N * N;
     const set = (this.state.paintFaces[face] = this.state.paintFaces[face] || {});
     let grid = set[emo];
-    if (Array.isArray(grid) && grid.length === need) return grid;
-    if (!create && (!Array.isArray(grid) || grid.length !== need)) {
-      // resample for display only (don't mutate) if size mismatched
-      if (Array.isArray(grid)) {
-        return resampleGrid(grid, Math.round(Math.sqrt(grid.length)), N);
+
+    // Existing grid (resample if size changed).
+    if (Array.isArray(grid)) {
+      if (grid.length !== need) {
+        grid = resampleGrid(grid, Math.round(Math.sqrt(grid.length)), N);
+        if (create) set[emo] = grid;
       }
-      return null;
+      return grid;
     }
-    const oldN = Array.isArray(grid) ? Math.round(Math.sqrt(grid.length)) : 0;
-    grid = resampleGrid(grid, oldN, N);
-    set[emo] = grid;
-    return grid;
+
+    // Missing: base on the neutral face for non-neutral expressions.
+    let base = null;
+    if (emo !== "neutral" && Array.isArray(set.neutral)) {
+      base = resampleGrid(set.neutral, Math.round(Math.sqrt(set.neutral.length)), N);
+    }
+    if (!base) base = new Array(need).fill(null);
+    if (create) set[emo] = base;
+    return base;
   }
 
   // Resample every stored grid to the current gridN (called when gridN changes).
@@ -547,7 +554,9 @@ class App {
     });
     $("clearPaintBtn").addEventListener("click", () => {
       const N = this.state.gridN;
-      this.state.paintFaces[this._selFace][this._selEmo] = new Array(N * N).fill(null);
+      // Neutral clears to blank; other expressions revert to the neutral base.
+      this.state.paintFaces[this._selFace][this._selEmo] =
+        this._selEmo === "neutral" ? new Array(N * N).fill(null) : null;
       this.repaintEditor();
       this.syncPaintToHead();
       this.renderPreview();
