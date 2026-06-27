@@ -190,6 +190,7 @@ body {
 /* paint editor */
 .paint-editor.disabled { opacity: 0.4; pointer-events: none; }
 .seg.sel { flex-wrap: wrap; gap: 3px; }
+.disabled-soft { opacity: 0.45; pointer-events: none; }
 .seg.sel .seg-btn { flex: 1 1 28%; padding: 6px 4px; font-size: 0.78rem; }
 .palette { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
 .palette .sw { width: 22px; height: 22px; border-radius: 5px; border: 2px solid transparent; cursor: pointer; }

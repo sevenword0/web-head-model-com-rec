@@ -102,9 +102,27 @@ export const DEFAULTS = {
   gridN: 8,
   paintFaces: buildDefaultPaintFaces(),
   paintOverlayMouth: true,
+  // render (3D)
+  fov: 30,                // perspective field of view (deg); low = near-orthographic
+  lightPreset: "studio",  // virtual environment light preset
+  lightAuto: false,       // auto-pick preset from the input video
+  lightIntensity: 1,      // global light multiplier
+  metalness: 0,           // material reflectivity
+  roughness: 0.85,        // material roughness
   // capture
   audio: true,
   showVideo: true,
+};
+
+// Virtual environment light presets. Each light: [color, intensity, [dirX,dirY,dirZ]?].
+export const LIGHT_ORDER = ["studio", "soft", "warm", "cool", "top", "dramatic"];
+export const LIGHT_PRESETS = {
+  studio:   { label: "스튜디오", ambient: ["#ffffff", 0.85], key: ["#ffffff", 1.0, [0.3, 0.6, 1]],   fill: ["#ffffff", 0.4, [-0.6, 0.2, 0.7]], rim: ["#ffffff", 0.25, [0, 0.4, -1]], hemi: ["#ffffff", "#444444", 0.3] },
+  soft:     { label: "부드럽게", ambient: ["#ffffff", 1.3],  key: ["#ffffff", 0.45, [0.2, 0.5, 1]],  fill: ["#ffffff", 0.5, [-0.5, 0.3, 0.8]], rim: ["#ffffff", 0.1, [0, 0.5, -1]],  hemi: ["#ffffff", "#888888", 0.5] },
+  warm:     { label: "노을(따뜻)", ambient: ["#ffd9a0", 0.6], key: ["#ffb060", 1.1, [0.5, 0.4, 0.8]], fill: ["#ffcaa0", 0.35, [-0.6, 0.1, 0.6]], rim: ["#ffe0b0", 0.3, [-0.3, 0.5, -1]], hemi: ["#ffd9a0", "#402810", 0.3] },
+  cool:     { label: "야간(차가움)", ambient: ["#90a8ff", 0.4], key: ["#a8c4ff", 0.7, [0.2, 0.5, 1]], fill: ["#7088c0", 0.25, [-0.5, 0.2, 0.7]], rim: ["#c0d0ff", 0.35, [0, 0.4, -1]], hemi: ["#a0b8ff", "#101830", 0.25] },
+  top:      { label: "탑라이트", ambient: ["#ffffff", 0.5],  key: ["#ffffff", 1.2, [0, 1, 0.2]],     fill: ["#ffffff", 0.25, [0, -0.4, 1]],   rim: ["#ffffff", 0.2, [0, 0.6, -1]],  hemi: ["#ffffff", "#303030", 0.3] },
+  dramatic: { label: "드라마틱", ambient: ["#ffffff", 0.2],  key: ["#ffffff", 1.5, [0.9, 0.3, 0.5]], fill: ["#6080ff", 0.15, [-0.8, 0.1, 0.5]], rim: ["#ffffff", 0.5, [-0.4, 0.5, -1]], hemi: ["#404040", "#000000", 0.15] },
 };
 
 // Ensure a settings object has a well-formed layered paintFaces structure,

@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { drawPixelFace } from "./pixelFace.js";
 import { drawRiggedFace, drawLayeredStatic } from "./faceRig.js";
+import { LIGHT_PRESETS } from "./settings.js";
 
 // Landmark indices (MediaPipe FaceMesh)
 const L = {
@@ -37,17 +38,26 @@ export class HeadRenderer {
 
     this.scene = new THREE.Scene();
 
-    // Orthographic camera matching pixel space (origin center, y up).
-    this.camera = new THREE.OrthographicCamera(
-      -width / 2, width / 2, height / 2, -height / 2, -2000, 2000
-    );
-    this.camera.position.z = 500;
+    // Perspective camera. Distance is derived from FOV so that the z=0 plane
+    // maps 1:1 to pixels (like ortho), while the cube depth gets perspective.
+    this.fov = 30;
+    this.camera = new THREE.PerspectiveCamera(this.fov, width / height, 1, 6000);
+    this._updateCamera();
 
-    // Lighting
-    this.scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(0.3, 0.6, 1);
-    this.scene.add(dir);
+    // Configurable light rig (driven by presets).
+    this.lights = {
+      ambient: new THREE.AmbientLight(0xffffff, 0.85),
+      hemi: new THREE.HemisphereLight(0xffffff, 0x444444, 0.3),
+      key: new THREE.DirectionalLight(0xffffff, 1.0),
+      fill: new THREE.DirectionalLight(0xffffff, 0.4),
+      rim: new THREE.DirectionalLight(0xffffff, 0.25),
+    };
+    this.lights.key.position.set(0.3, 0.6, 1);
+    this.lights.fill.position.set(-0.6, 0.2, 0.7);
+    this.lights.rim.position.set(0, 0.4, -1);
+    for (const l of Object.values(this.lights)) this.scene.add(l);
+    this.lightIntensity = 1;
+    this.matProps = { metalness: 0, roughness: 0.85 };
 
     // Root holds the head and is positioned/rotated each frame.
     this.root = new THREE.Group();
@@ -93,10 +103,11 @@ export class HeadRenderer {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.magFilter = THREE.NearestFilter;
       texture.minFilter = THREE.LinearFilter;
-      const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85 });
+      const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85, metalness: 0 });
       this.faces[key] = { canvas, ctx, texture, material };
       mats[idx] = material;
     }
+    this.cubeMaterials = mats.slice();
     // Convenience handle to the front face (used by procedural drawing).
     this.faceCanvas = this.faces.front.canvas;
     this.faceCtx = this.faces.front.ctx;
@@ -210,6 +221,67 @@ export class HeadRenderer {
     this.refreshCubeColors();
   }
 
+  // ---------- Camera (field of view) ----------
+  _updateCamera() {
+    const f = THREE.MathUtils.degToRad(this.fov);
+    const dist = (this.height / 2) / Math.tan(f / 2);
+    this.camera.fov = this.fov;
+    this.camera.aspect = this.width / this.height;
+    this.camera.position.set(0, 0, dist);
+    this.camera.near = Math.max(1, dist - this.height);
+    this.camera.far = dist + this.height * 2 + 2000;
+    this.camera.lookAt(0, 0, 0);
+    this.camera.updateProjectionMatrix();
+  }
+
+  setFOV(deg) {
+    this.fov = Math.max(5, Math.min(120, deg));
+    this._updateCamera();
+  }
+
+  // ---------- Lighting ----------
+  setLightIntensity(mult) {
+    this.lightIntensity = mult;
+    this.setLightPreset(this._presetKey || "studio");
+  }
+
+  setLightPreset(key) {
+    const p = LIGHT_PRESETS[key] || LIGHT_PRESETS.studio;
+    this._presetKey = key;
+    const m = this.lightIntensity;
+    const L = this.lights;
+    L.ambient.color.set(p.ambient[0]); L.ambient.intensity = p.ambient[1] * m;
+    L.key.color.set(p.key[0]); L.key.intensity = p.key[1] * m; L.key.position.set(...p.key[2]);
+    L.fill.color.set(p.fill[0]); L.fill.intensity = p.fill[1] * m; L.fill.position.set(...p.fill[2]);
+    L.rim.color.set(p.rim[0]); L.rim.intensity = p.rim[1] * m; L.rim.position.set(...p.rim[2]);
+    L.hemi.color.set(p.hemi[0]); L.hemi.groundColor.set(p.hemi[1]); L.hemi.intensity = p.hemi[2] * m;
+  }
+
+  // ---------- Material (reflectivity / roughness) ----------
+  setMaterialProps(props) {
+    Object.assign(this.matProps, props);
+    this.applyMaterialProps();
+  }
+
+  applyMaterialProps() {
+    const { metalness, roughness } = this.matProps;
+    for (const mat of this.cubeMaterials) {
+      mat.metalness = metalness; mat.roughness = roughness; mat.needsUpdate = true;
+    }
+    if (this.glb) {
+      this.glb.traverse((o) => {
+        if (o.isMesh && o.material) {
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for (const mat of mats) {
+            if ("metalness" in mat) mat.metalness = metalness;
+            if ("roughness" in mat) mat.roughness = roughness;
+            mat.needsUpdate = true;
+          }
+        }
+      });
+    }
+  }
+
   // ---------- GLB loading ----------
   async loadGLB(urlOrBuffer) {
     const loader = new GLTFLoader();
@@ -246,6 +318,7 @@ export class HeadRenderer {
     });
 
     this.glb = wrap;
+    this.applyMaterialProps();
     return { morphCount: this.morphTargets.length };
   }
 
@@ -362,11 +435,7 @@ export class HeadRenderer {
     this.width = w;
     this.height = h;
     this.renderer.setSize(w, h, false);
-    this.camera.left = -w / 2;
-    this.camera.right = w / 2;
-    this.camera.top = h / 2;
-    this.camera.bottom = -h / 2;
-    this.camera.updateProjectionMatrix();
+    this._updateCamera();
   }
 
   render() {

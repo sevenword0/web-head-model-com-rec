@@ -53,6 +53,7 @@
         <button class="tab active" data-tab="head">머리</button>
         <button class="tab" data-tab="emotion">감정</button>
         <button class="tab" data-tab="appearance">외형</button>
+        <button class="tab" data-tab="render">렌더</button>
         <button class="tab" data-tab="settings">설정</button>
       </div>
 
@@ -211,6 +212,43 @@
             <input type="checkbox" id="overlayMouthToggle" checked /> 말하는 입모양 덧그리기
           </label>
           <small class="hint">칸을 클릭/드래그해 큐브 정면(머리) 얼굴을 직접 칠하세요. 이 그림도 설정에 함께 저장됩니다.</small>
+        </div>
+      </div>
+
+      <!-- 렌더 탭 -->
+      <div class="tab-panel" data-panel="render">
+        <h3>카메라 화각</h3>
+        <div class="field">
+          <label>화각(FOV) <span class="val" id="fovVal">30°</span></label>
+          <input type="range" id="fov" min="5" max="100" step="1" value="30" />
+          <small class="hint">낮을수록 평면적(원근 약함), 높을수록 원근감이 강해집니다.</small>
+        </div>
+
+        <h3>가상 환경광</h3>
+        <div class="seg sel" id="lightSel">
+          <button class="seg-btn active" data-light="studio">스튜디오</button>
+          <button class="seg-btn" data-light="soft">부드럽게</button>
+          <button class="seg-btn" data-light="warm">노을</button>
+          <button class="seg-btn" data-light="cool">야간</button>
+          <button class="seg-btn" data-light="top">탑</button>
+          <button class="seg-btn" data-light="dramatic">드라마틱</button>
+        </div>
+        <label class="inline-check">
+          <input type="checkbox" id="lightAuto" /> 입력 영상으로 최적 프리셋 자동 선택
+        </label>
+        <div class="field">
+          <label>광량 <span class="val" id="lightIntensityVal">1.00</span></label>
+          <input type="range" id="lightIntensity" min="0" max="2" step="0.01" value="1" />
+        </div>
+
+        <h3>머티리얼(쉐이더)</h3>
+        <div class="field">
+          <label>반사도(metalness) <span class="val" id="metalnessVal">0.00</span></label>
+          <input type="range" id="metalness" min="0" max="1" step="0.01" value="0" />
+        </div>
+        <div class="field">
+          <label>거칠기(roughness) <span class="val" id="roughnessVal">0.85</span></label>
+          <input type="range" id="roughness" min="0" max="1" step="0.01" value="0.85" />
         </div>
       </div>
 

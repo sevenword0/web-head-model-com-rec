@@ -55,6 +55,7 @@ class App {
     this.buildPalette();
     this.bindUI();
     this.bindPaintEditor();
+    this.bindRenderControls();
     this.applyStateToUI();
     this.repaintEditor();
     this.renderPreview();
@@ -110,7 +111,9 @@ class App {
 
     this.head = new HeadRenderer(w, h);
     this.syncColorsToHead();
+    this.syncRenderToHead();
     this.head.setHeadType(this.state.headType === "glb" && this.head.hasGLB() ? "glb" : "cube");
+    if (this.state.lightAuto) this.startLightAuto();
 
     this.recorder = new Recorder(this.outCanvas);
 
@@ -352,6 +355,58 @@ class App {
     this.head.setFaceMode(this.state.faceMode);
     this.head.paintOverlayMouth = this.state.paintOverlayMouth;
     this.head.setPaintData(this.state.paintFaces, this.state.gridN);
+  }
+
+  // ============ Render (FOV / lights / material) ============
+  syncRenderToHead() {
+    if (!this.head) return;
+    this.head.setFOV(this.state.fov);
+    this.head.lightIntensity = this.state.lightIntensity;
+    this.head.setLightPreset(this.state.lightPreset);
+    this.head.setMaterialProps({ metalness: this.state.metalness, roughness: this.state.roughness });
+  }
+
+  applyLightPreset(key, fromAuto) {
+    this.state.lightPreset = key;
+    if (this.head) this.head.setLightPreset(key);
+    document.querySelectorAll("[data-light]").forEach((x) =>
+      x.classList.toggle("active", x.dataset.light === key)
+    );
+    if (!fromAuto) this.autosave();
+  }
+
+  startLightAuto() {
+    this.stopLightAuto();
+    const tick = () => {
+      const key = this.analyzeLighting();
+      if (key && key !== this.state.lightPreset) this.applyLightPreset(key, true);
+    };
+    tick();
+    this._lightTimer = setInterval(tick, 1500);
+  }
+
+  stopLightAuto() {
+    if (this._lightTimer) { clearInterval(this._lightTimer); this._lightTimer = null; }
+  }
+
+  // Pick the best light preset from the input video's brightness & warmth.
+  analyzeLighting() {
+    const v = this.video;
+    if (!v || v.readyState < 2) return null;
+    const c = this._lumCanvas || (this._lumCanvas = document.createElement("canvas"));
+    c.width = 32; c.height = 24;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    try { ctx.drawImage(v, 0, 0, 32, 24); } catch { return null; }
+    const d = ctx.getImageData(0, 0, 32, 24).data;
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+    r /= n; g /= n; b /= n;
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const warmth = (r - b) / 255;
+    if (lum < 0.28) return "cool";       // dark scene → night
+    if (warmth > 0.13) return "warm";    // warm tint → sunset
+    if (lum > 0.62) return "studio";     // bright neutral
+    return "soft";                        // mid
   }
 
   renderPreview() {
@@ -639,6 +694,46 @@ class App {
     });
   }
 
+  bindRenderControls() {
+    $("fov").addEventListener("input", (e) => {
+      this.state.fov = parseFloat(e.target.value);
+      $("fovVal").textContent = Math.round(this.state.fov) + "°";
+      if (this.head) this.head.setFOV(this.state.fov);
+      this.autosave();
+    });
+    document.querySelectorAll("[data-light]").forEach((b) =>
+      b.addEventListener("click", () => {
+        if (this.state.lightAuto) return; // locked while auto
+        this.applyLightPreset(b.dataset.light, false);
+      })
+    );
+    $("lightAuto").addEventListener("change", (e) => {
+      this.state.lightAuto = e.target.checked;
+      $("lightSel").classList.toggle("disabled-soft", this.state.lightAuto);
+      if (this.state.lightAuto) this.startLightAuto();
+      else this.stopLightAuto();
+      this.autosave();
+    });
+    $("lightIntensity").addEventListener("input", (e) => {
+      this.state.lightIntensity = parseFloat(e.target.value);
+      $("lightIntensityVal").textContent = this.state.lightIntensity.toFixed(2);
+      if (this.head) { this.head.lightIntensity = this.state.lightIntensity; this.head.setLightPreset(this.state.lightPreset); }
+      this.autosave();
+    });
+    $("metalness").addEventListener("input", (e) => {
+      this.state.metalness = parseFloat(e.target.value);
+      $("metalnessVal").textContent = this.state.metalness.toFixed(2);
+      if (this.head) this.head.setMaterialProps({ metalness: this.state.metalness });
+      this.autosave();
+    });
+    $("roughness").addEventListener("input", (e) => {
+      this.state.roughness = parseFloat(e.target.value);
+      $("roughnessVal").textContent = this.state.roughness.toFixed(2);
+      if (this.head) this.head.setMaterialProps({ roughness: this.state.roughness });
+      this.autosave();
+    });
+  }
+
   // ============ UI binding ============
   bindUI() {
     $("startBtn").addEventListener("click", () => this.start());
@@ -883,8 +978,21 @@ class App {
       x.classList.toggle("active", x.dataset.layer === "base")
     );
 
+    // render controls
+    $("fov").value = s.fov; $("fovVal").textContent = Math.round(s.fov) + "°";
+    $("lightAuto").checked = s.lightAuto;
+    $("lightSel").classList.toggle("disabled-soft", s.lightAuto);
+    document.querySelectorAll("[data-light]").forEach((x) =>
+      x.classList.toggle("active", x.dataset.light === s.lightPreset)
+    );
+    $("lightIntensity").value = s.lightIntensity; $("lightIntensityVal").textContent = (+s.lightIntensity).toFixed(2);
+    $("metalness").value = s.metalness; $("metalnessVal").textContent = (+s.metalness).toFixed(2);
+    $("roughness").value = s.roughness; $("roughnessVal").textContent = (+s.roughness).toFixed(2);
+
     this.syncColorsToHead();
+    this.syncRenderToHead();
     if (this.head) this.head.setHeadType(s.headType === "glb" && this.head.hasGLB() ? "glb" : "cube");
+    if (s.lightAuto) this.startLightAuto(); else this.stopLightAuto();
     this.repaintEditor();
     this.renderPreview();
   }
