@@ -112,8 +112,10 @@ function drawMouth(px, ctx, u, colors, emo, k, open, wide) {
     return;
   }
 
-  // closed mouth — curve depends on emotion
-  let curve = 0; // + up (smile), - down (frown)
+  // closed mouth — curve depends on emotion.
+  // curve > 0 => smile (U: corners up, center dips down),
+  // curve < 0 => frown (∩: center up, corners down). Canvas y grows downward.
+  let curve = 0;
   if (emo === "happy") curve = 1 + k * 2;
   else if (emo === "sad") curve = -(1 + k * 1.5);
   else if (emo === "angry") curve = -0.5 * k;
@@ -122,7 +124,8 @@ function drawMouth(px, ctx, u, colors, emo, k, open, wide) {
   const x0 = cx - width / 2;
   for (let i = 0; i <= width; i++) {
     const t = (i / width) * 2 - 1; // -1..1
-    const yy = baseY + Math.round(curve * (t * t) - (curve > 0 ? curve : 0));
+    // corners anchored at baseY; center offset by `curve` (down for smile).
+    const yy = baseY + Math.round(curve * (1 - t * t));
     px(x0 + i, yy, 1, 1, mouthColor);
     // thickness
     px(x0 + i, yy + 1, 1, 1, dark);
