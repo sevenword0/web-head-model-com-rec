@@ -39,14 +39,23 @@ body {
 }
 @media (max-width: 940px) {
   .layout { grid-template-columns: 1fr; }
+  /* pin a compact stage at the top; let the panel scroll beneath it */
+  .stage { top: 0; background: var(--bg); padding-top: 6px; z-index: 5; }
+  .stage-inner { aspect-ratio: auto; height: 42vh; }
+  #outputCanvas { object-fit: contain; }
 }
 
 /* ===== Stage ===== */
-.stage { display: flex; flex-direction: column; gap: 12px; }
+/* Keep the capture view in view while the side panel scrolls. */
+.stage {
+  display: flex; flex-direction: column; gap: 12px;
+  position: sticky; top: 12px; align-self: start;
+}
 .stage-inner {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
+  max-height: 72vh; /* keep the sticky stage within the viewport */
   background: #000;
   border-radius: var(--radius);
   overflow: hidden;
@@ -62,6 +71,7 @@ body {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   display: block;
+  object-fit: contain;
 }
 .status {
   position: absolute;
