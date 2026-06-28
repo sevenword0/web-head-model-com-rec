@@ -18,7 +18,7 @@ export class FaceTracker {
       this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate: "GPU" },
         runningMode: "VIDEO",
-        numFaces: 2,
+        numFaces: 3,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
       });
@@ -27,7 +27,7 @@ export class FaceTracker {
       this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate: "CPU" },
         runningMode: "VIDEO",
-        numFaces: 2,
+        numFaces: 3,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
       });

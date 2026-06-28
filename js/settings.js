@@ -174,7 +174,7 @@ export const DEFAULTS = {
   paintOverlayMouth: true,
   // two-person slots: which avatar each tracked face uses
   // '' = current editing avatar, 'b:steve'/'b:creeper' = builtin, 'p:NAME' = saved preset
-  slotPresets: ["", "b:creeper"],
+  slotPresets: ["", "b:creeper", "b:steve"],
   // render (3D)
   fov: 30,                // perspective field of view (deg); low = near-orthographic
   lightPreset: "studio",  // virtual environment light preset
@@ -224,9 +224,9 @@ export function normalizeSettings(s) {
     }
   }
   delete s.paintGrid;
-  // fresh slotPresets array (avoid sharing DEFAULTS reference)
-  if (Array.isArray(s.slotPresets)) s.slotPresets = [s.slotPresets[0] ?? "", s.slotPresets[1] ?? "b:creeper"];
-  else s.slotPresets = ["", "b:creeper"];
+  // fresh slotPresets array of 3 (avoid sharing DEFAULTS reference)
+  const sp = Array.isArray(s.slotPresets) ? s.slotPresets : [];
+  s.slotPresets = [sp[0] ?? "", sp[1] ?? "b:creeper", sp[2] ?? "b:steve"];
   return s;
 }
 

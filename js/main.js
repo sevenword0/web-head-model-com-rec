@@ -39,9 +39,11 @@ class App {
     this.recorder = null;
 
     this.state = Settings.loadSettings() || Settings.freshDefaults();
+    this.NUM_SLOTS = 3;
     this.lastVideoTime = -1;
-    this.lastFaces = [null, null]; // per-slot last good detection
-    this.lastSeen = [0, 0];        // per-slot timestamp
+    this.lastFaces = [null, null, null]; // per-slot last good detection
+    this.lastSeen = [0, 0, 0];           // per-slot last detection time
+    this.firstSeen = [0, 0, 0];          // start of current continuous presence
     this.running = false;
 
     this._paintColor = this.state.faceColor || PALETTE[0];
@@ -217,9 +219,15 @@ class App {
       try {
         const faces = this.tracker.detect(v, performance.now()); // array, left→right
         const now = performance.now();
-        // Map each detected face to a slot; keep last good per slot (grace).
+        // Map each detected face to a slot; track continuous presence per slot.
+        const MAX_GRACE = 3000;
         for (let i = 0; i < this.lastFaces.length; i++) {
-          if (faces[i]) { this.lastFaces[i] = faces[i]; this.lastSeen[i] = now; }
+          if (faces[i]) {
+            // new presence if the gap exceeded the longest grace window
+            if (now - this.lastSeen[i] > MAX_GRACE + 500) this.firstSeen[i] = now;
+            this.lastFaces[i] = faces[i];
+            this.lastSeen[i] = now;
+          }
         }
       } catch (e) {
         // detection can throw transiently; ignore one frame
@@ -251,13 +259,17 @@ class App {
 
     if (!this.head) return;
 
-    // Drive each head unit from its tracked face (grace period to avoid flicker).
-    const GRACE_MS = 600;
+    // Drive each head unit from its tracked face.
+    // A face that was held stably for 3s+ keeps its last position for up to 3s
+    // after detection drops (search window); a brief presence uses a short grace.
+    const SHORT_GRACE = 600, LONG_GRACE = 3000, ESTABLISHED = 3000;
     const now = performance.now();
     let anyFresh = false;
     let primary = null;
     for (let i = 0; i < this.head.units.length; i++) {
-      const fresh = this.lastSeen[i] && now - this.lastSeen[i] < GRACE_MS;
+      const established = this.lastSeen[i] - this.firstSeen[i] >= ESTABLISHED;
+      const grace = established ? LONG_GRACE : SHORT_GRACE;
+      const fresh = this.lastSeen[i] && now - this.lastSeen[i] < grace;
       const face = fresh ? this.lastFaces[i] : null;
       if (face) {
         this.driveUnit(i, face);
@@ -266,6 +278,7 @@ class App {
       } else {
         this.head.units[i].hide();
         if (this._smoothBS) this._smoothBS[i] = null; // reset so it snaps on return
+        this.lastSeen[i] = 0; this.firstSeen[i] = 0; // forget; next presence is fresh
       }
     }
 
@@ -898,7 +911,7 @@ class App {
 
   populateSlotSelects() {
     const opts = this.slotOptions();
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < this.NUM_SLOTS; i++) {
       const sel = $("slot" + i);
       if (!sel) continue;
       const cur = this.state.slotPresets[i] || "";
@@ -909,8 +922,10 @@ class App {
   }
 
   bindSlotsAndHeadPresets() {
-    for (let i = 0; i < 2; i++) {
-      $("slot" + i).addEventListener("change", (e) => {
+    for (let i = 0; i < this.NUM_SLOTS; i++) {
+      const sel = $("slot" + i);
+      if (!sel) continue;
+      sel.addEventListener("change", (e) => {
         this.state.slotPresets[i] = e.target.value;
         this.syncUnits();
         this.autosave();

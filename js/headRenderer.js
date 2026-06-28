@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { HeadUnit } from "./headUnit.js";
 import { LIGHT_PRESETS } from "./settings.js";
 
-export const MAX_HEADS = 2;
+export const MAX_HEADS = 3;
 
 export class HeadRenderer {
   constructor(width, height) {
