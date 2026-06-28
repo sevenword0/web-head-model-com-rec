@@ -40,8 +40,8 @@ class App {
 
     this.state = Settings.loadSettings() || Settings.freshDefaults();
     this.lastVideoTime = -1;
-    this.lastResult = null;
-    this.lastSeen = 0;
+    this.lastFaces = [null, null]; // per-slot last good detection
+    this.lastSeen = [0, 0];        // per-slot timestamp
     this.running = false;
 
     this._paintColor = this.state.faceColor || PALETTE[0];
@@ -56,7 +56,9 @@ class App {
     this.bindUI();
     this.bindPaintEditor();
     this.bindRenderControls();
+    this.bindSlotsAndHeadPresets();
     this.applyStateToUI();
+    this.renderHeadPresetList();
     this.repaintEditor();
     this.renderPreview();
     this.renderPresetList();
@@ -110,9 +112,8 @@ class App {
     this.tracker = new FaceTracker();
 
     this.head = new HeadRenderer(w, h);
-    this.syncColorsToHead();
     this.syncRenderToHead();
-    this.head.setHeadType(this.state.headType === "glb" && this.head.hasGLB() ? "glb" : "cube");
+    this.syncUnits();
     if (this.state.lightAuto) this.startLightAuto();
 
     this.recorder = new Recorder(this.outCanvas);
@@ -138,12 +139,11 @@ class App {
     if (v.readyState >= 2 && v.currentTime !== this.lastVideoTime) {
       this.lastVideoTime = v.currentTime;
       try {
-        const r = this.tracker.detect(v, performance.now());
-        // Keep the last good result on a transient miss so the head doesn't
-        // flicker/disappear when detection drops a frame.
-        if (r) {
-          this.lastResult = r;
-          this.lastSeen = performance.now();
+        const faces = this.tracker.detect(v, performance.now()); // array, left→right
+        const now = performance.now();
+        // Map each detected face to a slot; keep last good per slot (grace).
+        for (let i = 0; i < this.lastFaces.length; i++) {
+          if (faces[i]) { this.lastFaces[i] = faces[i]; this.lastSeen[i] = now; }
         }
       } catch (e) {
         // detection can throw transiently; ignore one frame
@@ -173,69 +173,82 @@ class App {
     }
     ctx.restore();
 
-    // Use the last result for a short grace period after detection drops, so the
-    // head stays put instead of vanishing on a brief miss (e.g. centre of frame).
+    if (!this.head) return;
+
+    // Drive each head unit from its tracked face (grace period to avoid flicker).
     const GRACE_MS = 600;
-    const fresh = this.lastSeen && performance.now() - this.lastSeen < GRACE_MS;
-    const res = fresh ? this.lastResult : null;
-    if (res && this.head) {
-      // Determine blendshapes driving the face/morphs.
-      const live = res.blendshapes;
-      let driving;
-      let emotion, intensity;
-
-      if (this.state.emotionMode === "manual") {
-        emotion = this.state.manualEmotion;
-        intensity = this.state.intensity;
-        driving = synthesizeBlendshapes(emotion, intensity);
+    const now = performance.now();
+    let anyFresh = false;
+    let primary = null;
+    for (let i = 0; i < this.head.units.length; i++) {
+      const fresh = this.lastSeen[i] && now - this.lastSeen[i] < GRACE_MS;
+      const face = fresh ? this.lastFaces[i] : null;
+      if (face) {
+        this.driveUnit(i, face);
+        anyFresh = true;
+        if (!primary) primary = face;
       } else {
-        const a = analyzeEmotion(live);
-        emotion = a.top;
-        intensity = a.intensity;
-        driving = live;
-        this.lastAuto = a;
+        this.head.units[i].hide();
       }
-
-      // Speaking mouth: live jaw open always blended in (if enabled).
-      const liveJaw = live.get("jawOpen") || 0;
-      const synthJaw = driving.get("jawOpen") || 0;
-      const mouthOpen = this.state.speaking ? Math.max(liveJaw, synthJaw) : synthJaw;
-      const mouthWide = 1 - (live.get("mouthPucker") || 0) * 0.7;
-
-      // Update cube pixel face
-      this.head.updateFace({
-        emotion,
-        intensity,
-        mouthOpen,
-        mouthWide,
-        blinkL: live.get("eyeBlinkLeft") || 0,
-        blinkR: live.get("eyeBlinkRight") || 0,
-      });
-
-      // Drive GLB morph targets (mix synthetic emotion + live speaking)
-      const morphMap = new Map(driving);
-      if (this.state.speaking) morphMap.set("jawOpen", mouthOpen);
-      this.head.applyMorphs(morphMap, this.state.exprStrength);
-
-      // Align + render head
-      this.head.align(res.landmarks, res.matrix, {
-        mirror: this.state.mirror,
-        scaleMul: this.state.scale,
-        offsetX: this.state.offsetX,
-        offsetY: this.state.offsetY,
-        offsetZ: this.state.offsetZ,
-        rotX: this.state.rotX,
-        rotY: this.state.rotY,
-        rotZ: this.state.rotZ,
-      });
-      this.head.render();
-      ctx.drawImage(this.head.canvas, 0, 0, W, H);
-
-      this.updateReadout(emotion, intensity, live);
-    } else if (this.head) {
-      this.head.hide();
-      this.setStatus("얼굴을 찾는 중…");
     }
+
+    this.head.render();
+    ctx.drawImage(this.head.canvas, 0, 0, W, H);
+
+    if (anyFresh && primary) this.updateReadoutFor(primary);
+    else this.setStatus("얼굴을 찾는 중…");
+  }
+
+  // Compute expression/mouth for one face and apply to the matching head unit.
+  driveUnit(i, face) {
+    const unit = this.head.units[i];
+    const live = face.blendshapes;
+    let driving, emotion, intensity;
+    if (this.state.emotionMode === "manual") {
+      emotion = this.state.manualEmotion;
+      intensity = this.state.intensity;
+      driving = synthesizeBlendshapes(emotion, intensity);
+    } else {
+      const a = analyzeEmotion(live);
+      emotion = a.top; intensity = a.intensity; driving = live;
+      if (i === 0) this.lastAuto = a;
+    }
+    const liveJaw = live.get("jawOpen") || 0;
+    const synthJaw = driving.get("jawOpen") || 0;
+    const mouthOpen = this.state.speaking ? Math.max(liveJaw, synthJaw) : synthJaw;
+    const mouthWide = 1 - (live.get("mouthPucker") || 0) * 0.7;
+
+    unit.updateFace({
+      emotion, intensity, mouthOpen, mouthWide,
+      blinkL: live.get("eyeBlinkLeft") || 0,
+      blinkR: live.get("eyeBlinkRight") || 0,
+    });
+    const morphMap = new Map(driving);
+    if (this.state.speaking) morphMap.set("jawOpen", mouthOpen);
+    unit.applyMorphs(morphMap, this.state.exprStrength);
+
+    unit.align(face.landmarks, face.matrix, {
+      mirror: this.state.mirror,
+      scaleMul: this.state.scale,
+      offsetX: this.state.offsetX,
+      offsetY: this.state.offsetY,
+      offsetZ: this.state.offsetZ,
+      rotX: this.state.rotX,
+      rotY: this.state.rotY,
+      rotZ: this.state.rotZ,
+    });
+  }
+
+  updateReadoutFor(face) {
+    const live = face.blendshapes;
+    let emotion, intensity;
+    if (this.state.emotionMode === "manual") {
+      emotion = this.state.manualEmotion; intensity = this.state.intensity;
+    } else {
+      const a = this.lastAuto || analyzeEmotion(live);
+      emotion = a.top; intensity = a.intensity;
+    }
+    this.updateReadout(emotion, intensity, live);
   }
 
   updateReadout(emotion, intensity, live) {
@@ -337,26 +350,30 @@ class App {
     $("downloads").prepend(item);
   }
 
-  // ============ Settings <-> head ============
-  syncColorsToHead() {
-    if (!this.head) return;
-    this.head.setColors({
-      face: this.state.faceColor,
-      cube: this.state.cubeColor,
-      eye: this.state.eyeColor,
-      brow: this.state.browColor,
-      mouth: this.state.mouthColor,
-      cheek: this.state.cheekColor,
+  // ============ Settings <-> head units ============
+  applyBundleToUnit(u, b) {
+    u.setColors({
+      face: b.faceColor, cube: b.cubeColor, eye: b.eyeColor,
+      brow: b.browColor, mouth: b.mouthColor, cheek: b.cheekColor,
     });
-    this.syncPaintToHead();
+    u.setFaceMode(b.faceMode);
+    u.paintOverlayMouth = this.state.paintOverlayMouth;
+    u.setPaintData(b.paintFaces, b.gridN);
+    u.setHeadType(b.headType === "glb" && u.hasGLB() ? "glb" : "cube");
   }
 
-  syncPaintToHead() {
+  // Resolve each person's avatar (editing / builtin / saved preset) onto its unit.
+  syncUnits() {
     if (!this.head) return;
-    this.head.setFaceMode(this.state.faceMode);
-    this.head.paintOverlayMouth = this.state.paintOverlayMouth;
-    this.head.setPaintData(this.state.paintFaces, this.state.gridN);
+    for (let i = 0; i < this.head.units.length; i++) {
+      const b = Settings.resolveSlotBundle(this.state.slotPresets[i] || "", this.state);
+      this.applyBundleToUnit(this.head.units[i], b);
+    }
   }
+
+  // back-compat names used throughout the editor → resync units
+  syncColorsToHead() { this.syncUnits(); }
+  syncPaintToHead() { this.syncUnits(); }
 
   // ============ Render (FOV / lights / material) ============
   syncRenderToHead() {
@@ -735,6 +752,86 @@ class App {
     });
   }
 
+  // ============ Two-person slots & head presets ============
+  slotOptions() {
+    const opts = [["", "현재 편집중"]];
+    for (const [id, label] of Object.entries(Settings.BUILTIN_HEADS)) opts.push([id, label + " (기본)"]);
+    for (const name of Object.keys(Settings.getHeadPresets())) opts.push(["p:" + name, name]);
+    return opts;
+  }
+
+  populateSlotSelects() {
+    const opts = this.slotOptions();
+    for (let i = 0; i < 2; i++) {
+      const sel = $("slot" + i);
+      if (!sel) continue;
+      const cur = this.state.slotPresets[i] || "";
+      sel.innerHTML = opts
+        .map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`)
+        .join("");
+    }
+  }
+
+  bindSlotsAndHeadPresets() {
+    for (let i = 0; i < 2; i++) {
+      $("slot" + i).addEventListener("change", (e) => {
+        this.state.slotPresets[i] = e.target.value;
+        this.syncUnits();
+        this.autosave();
+      });
+    }
+    $("saveHeadPresetBtn").addEventListener("click", () => {
+      const name = $("headPresetName").value.trim();
+      if (!name) return this.flashSave("프리셋 이름을 입력하세요");
+      Settings.saveHeadPreset(name, Settings.avatarBundle(this.state));
+      $("headPresetName").value = "";
+      this.renderHeadPresetList();
+      this.populateSlotSelects();
+      this.flashSave(`헤드 프리셋 "${name}" 저장됨 ✓`);
+    });
+  }
+
+  renderHeadPresetList() {
+    const list = $("headPresetList");
+    if (!list) return;
+    const presets = Settings.getHeadPresets();
+    const names = Object.keys(presets);
+    list.innerHTML = names.length ? "" : '<li style="opacity:.6;justify-content:center">저장된 헤드 프리셋 없음</li>';
+    for (const name of names) {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      span.textContent = name;
+      span.title = "현재 편집 얼굴로 불러오기";
+      span.addEventListener("click", () => this.loadHeadPresetToEditor(name));
+      const del = document.createElement("button");
+      del.textContent = "✕";
+      del.addEventListener("click", () => {
+        Settings.deleteHeadPreset(name);
+        // any slot pointing at it falls back to editing avatar
+        this.state.slotPresets = this.state.slotPresets.map((s) => (s === "p:" + name ? "" : s));
+        this.renderHeadPresetList();
+        this.populateSlotSelects();
+        this.syncUnits();
+      });
+      li.appendChild(span);
+      li.appendChild(del);
+      list.appendChild(li);
+    }
+  }
+
+  loadHeadPresetToEditor(name) {
+    const b = Settings.getHeadPresets()[name];
+    if (!b) return;
+    Object.assign(this.state, {
+      headType: b.headType, faceMode: b.faceMode, gridN: b.gridN,
+      paintFaces: JSON.parse(JSON.stringify(b.paintFaces)),
+      faceColor: b.faceColor, cubeColor: b.cubeColor, eyeColor: b.eyeColor,
+      browColor: b.browColor, mouthColor: b.mouthColor, cheekColor: b.cheekColor,
+    });
+    this.applyStateToUI();
+    this.flashSave(`"${name}" 편집 얼굴로 불러옴 ✓`);
+  }
+
   // ============ UI binding ============
   bindUI() {
     $("startBtn").addEventListener("click", () => this.start());
@@ -750,22 +847,22 @@ class App {
       })
     );
 
-    // head type
+    // head type (applies to the editing avatar). GLB is loaded on unit 0.
     document.querySelectorAll("[data-headtype]").forEach((b) =>
       b.addEventListener("click", () => {
-        if (b.dataset.headtype === "glb" && this.head && !this.head.hasGLB()) {
+        if (b.dataset.headtype === "glb" && this.head && !this.head.units[0].hasGLB()) {
           $("glbInfo").textContent = "먼저 GLB 파일을 선택하세요.";
           return;
         }
         document.querySelectorAll("[data-headtype]").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
         this.state.headType = b.dataset.headtype;
-        if (this.head) this.head.setHeadType(this.state.headType);
+        this.syncUnits();
         this.autosave();
       })
     );
 
-    // GLB load
+    // GLB load (editing avatar / person 1)
     $("glbInput").addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -776,13 +873,15 @@ class App {
       $("glbInfo").textContent = "GLB 로딩 중…";
       try {
         const buf = await file.arrayBuffer();
-        const info = await this.head.loadGLB(buf);
-        this.head.setHeadType("glb");
+        const info = await this.head.units[0].loadGLB(buf);
         this.state.headType = "glb";
+        this.state.slotPresets[0] = ""; // person 1 = editing avatar (GLB)
         document.querySelectorAll("[data-headtype]").forEach((x) => x.classList.remove("active"));
         document.querySelector('[data-headtype="glb"]').classList.add("active");
+        this.syncUnits();
+        this.populateSlotSelects();
         $("glbInfo").textContent = `로드 완료: ${file.name} · 모프타깃 ${info.morphCount}개${
-          info.morphCount ? " (표정 자동 반영)" : " (표정 미지원, 포즈만)"
+          info.morphCount ? " (표정 자동 반영, 사람1)" : " (표정 미지원, 포즈만)"
         }`;
         this.autosave();
       } catch (err) {
@@ -993,9 +1092,9 @@ class App {
     $("metalness").value = s.metalness; $("metalnessVal").textContent = (+s.metalness).toFixed(2);
     $("roughness").value = s.roughness; $("roughnessVal").textContent = (+s.roughness).toFixed(2);
 
-    this.syncColorsToHead();
     this.syncRenderToHead();
-    if (this.head) this.head.setHeadType(s.headType === "glb" && this.head.hasGLB() ? "glb" : "cube");
+    this.syncUnits();
+    this.populateSlotSelects();
     if (s.lightAuto) this.startLightAuto(); else this.stopLightAuto();
     this.repaintEditor();
     this.renderPreview();

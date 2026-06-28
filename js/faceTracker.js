@@ -18,7 +18,7 @@ export class FaceTracker {
       this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate: "GPU" },
         runningMode: "VIDEO",
-        numFaces: 1,
+        numFaces: 2,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
       });
@@ -27,7 +27,7 @@ export class FaceTracker {
       this.landmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate: "CPU" },
         runningMode: "VIDEO",
-        numFaces: 1,
+        numFaces: 2,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
       });
@@ -36,24 +36,29 @@ export class FaceTracker {
   }
 
   /**
-   * @returns {null | {landmarks, blendshapes: Map<string,number>, matrix: number[]}}
+   * @returns {Array<{landmarks, blendshapes: Map<string,number>, matrix: number[]}>}
+   *   one entry per detected face (sorted left→right for stable slot mapping).
    */
   detect(video, timestampMs) {
-    if (!this.ready || !this.landmarker) return null;
+    if (!this.ready || !this.landmarker) return [];
     const res = this.landmarker.detectForVideo(video, timestampMs);
-    if (!res || !res.faceLandmarks || res.faceLandmarks.length === 0) return null;
+    if (!res || !res.faceLandmarks || res.faceLandmarks.length === 0) return [];
 
-    const blendshapes = new Map();
-    if (res.faceBlendshapes && res.faceBlendshapes[0]) {
-      for (const c of res.faceBlendshapes[0].categories) {
-        blendshapes.set(c.categoryName, c.score);
+    const faces = res.faceLandmarks.map((landmarks, i) => {
+      const blendshapes = new Map();
+      if (res.faceBlendshapes && res.faceBlendshapes[i]) {
+        for (const c of res.faceBlendshapes[i].categories) blendshapes.set(c.categoryName, c.score);
       }
-    }
-    const matrix =
-      res.facialTransformationMatrixes && res.facialTransformationMatrixes[0]
-        ? res.facialTransformationMatrixes[0].data
-        : null;
-
-    return { landmarks: res.faceLandmarks[0], blendshapes, matrix };
+      const matrix =
+        res.facialTransformationMatrixes && res.facialTransformationMatrixes[i]
+          ? res.facialTransformationMatrixes[i].data
+          : null;
+      // average x of landmarks → for stable left/right ordering
+      let sx = 0;
+      for (const lm of landmarks) sx += lm.x;
+      return { landmarks, blendshapes, matrix, _ax: sx / landmarks.length };
+    });
+    faces.sort((a, b) => a._ax - b._ax);
+    return faces;
   }
 }

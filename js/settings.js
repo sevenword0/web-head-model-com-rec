@@ -66,12 +66,80 @@ export function buildSteveLayers() {
   return { base, brows, eyes, mouth };
 }
 
+// Minecraft Creeper face split into layers (8x8). A distinct second avatar.
+export function buildCreeperLayers() {
+  const G = "#5fa84a", K = "#1c1c1c", _ = null;
+  const base = new Array(64).fill(G);
+  const eyes = new Array(64).fill(_);
+  const mouth = new Array(64).fill(_);
+  const set = (arr, r, c, v) => { arr[r * 8 + c] = v; };
+  // two 2x2 black eyes
+  for (const [r, c] of [[2, 1], [2, 2], [3, 1], [3, 2], [2, 5], [2, 6], [3, 5], [3, 6]]) set(eyes, r, c, K);
+  // classic creeper mouth
+  for (const [r, c] of [[4, 3], [4, 4], [5, 2], [5, 3], [5, 4], [5, 5], [6, 2], [6, 5]]) set(mouth, r, c, K);
+  return { base, brows: new Array(64).fill(_), eyes, mouth };
+}
+
 // Build the default paint set: Steve layers on the front, others empty.
 export function buildDefaultPaintFaces() {
   const faces = {};
   for (const f of FACE_KEYS) faces[f] = emptyLayerSet();
   faces.front = buildSteveLayers();
   return faces;
+}
+
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+// Avatar appearance bundle (cube look) — what a "head preset" stores.
+export function avatarBundle(state) {
+  return {
+    headType: state.headType, faceMode: state.faceMode, gridN: state.gridN,
+    paintFaces: clone(state.paintFaces),
+    faceColor: state.faceColor, cubeColor: state.cubeColor, eyeColor: state.eyeColor,
+    browColor: state.browColor, mouthColor: state.mouthColor, cheekColor: state.cheekColor,
+  };
+}
+
+// Built-in head avatars selectable per person.
+export const BUILTIN_HEADS = { "b:steve": "스티브", "b:creeper": "크리퍼" };
+export function builtinBundle(id) {
+  const faces = (which) => {
+    const f = {};
+    for (const k of FACE_KEYS) f[k] = emptyLayerSet();
+    f.front = which();
+    return f;
+  };
+  if (id === "b:creeper") {
+    return { headType: "cube", faceMode: "painted", gridN: 8, paintFaces: faces(buildCreeperLayers),
+      faceColor: "#5fa84a", cubeColor: "#4a8c3f", eyeColor: "#1c1c1c", browColor: "#1c1c1c", mouthColor: "#1c1c1c", cheekColor: "#5fa84a" };
+  }
+  return { headType: "cube", faceMode: "painted", gridN: 8, paintFaces: faces(buildSteveLayers),
+    faceColor: STEVE_SKIN, cubeColor: "#9b7253", eyeColor: "#2b2b2b", browColor: "#46352b", mouthColor: "#6c4f33", cheekColor: "#e88f8f" };
+}
+
+// ---- head presets (per-person cube avatars) ----
+const HEAD_PRESET_KEY = "headStudio.headPresets";
+export function getHeadPresets() {
+  try { return JSON.parse(localStorage.getItem(HEAD_PRESET_KEY) || "{}"); } catch { return {}; }
+}
+export function saveHeadPreset(name, bundle) {
+  const p = getHeadPresets(); p[name] = bundle;
+  localStorage.setItem(HEAD_PRESET_KEY, JSON.stringify(p));
+}
+export function deleteHeadPreset(name) {
+  const p = getHeadPresets(); delete p[name];
+  localStorage.setItem(HEAD_PRESET_KEY, JSON.stringify(p));
+}
+
+// Resolve a slot value ('' = editing avatar, 'b:*' = builtin, 'p:NAME' = saved).
+export function resolveSlotBundle(slotVal, state) {
+  if (!slotVal) return avatarBundle(state);
+  if (slotVal.startsWith("b:")) return builtinBundle(slotVal);
+  if (slotVal.startsWith("p:")) {
+    const b = getHeadPresets()[slotVal.slice(2)];
+    return b || avatarBundle(state);
+  }
+  return avatarBundle(state);
 }
 
 export const DEFAULTS = {
@@ -103,6 +171,9 @@ export const DEFAULTS = {
   gridN: 8,
   paintFaces: buildDefaultPaintFaces(),
   paintOverlayMouth: true,
+  // two-person slots: which avatar each tracked face uses
+  // '' = current editing avatar, 'b:steve'/'b:creeper' = builtin, 'p:NAME' = saved preset
+  slotPresets: ["", "b:creeper"],
   // render (3D)
   fov: 30,                // perspective field of view (deg); low = near-orthographic
   lightPreset: "studio",  // virtual environment light preset
@@ -151,6 +222,9 @@ export function normalizeSettings(s) {
     }
   }
   delete s.paintGrid;
+  // fresh slotPresets array (avoid sharing DEFAULTS reference)
+  if (Array.isArray(s.slotPresets)) s.slotPresets = [s.slotPresets[0] ?? "", s.slotPresets[1] ?? "b:creeper"];
+  else s.slotPresets = ["", "b:creeper"];
   return s;
 }
 
