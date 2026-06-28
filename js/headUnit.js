@@ -210,9 +210,9 @@ export class HeadUnit {
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     const dim = Math.max(maxX - minX, maxY - minY) * 1.35 * opts.scaleMul;
 
-    this.root.position.set(cx - W / 2 + opts.offsetX, -(cy - H / 2) + opts.offsetY, opts.offsetZ || 0);
-    this.root.scale.setScalar(dim);
-
+    // Target transform
+    const tPos = new THREE.Vector3(cx - W / 2 + opts.offsetX, -(cy - H / 2) + opts.offsetY, opts.offsetZ || 0);
+    const tScl = dim;
     const q = new THREE.Quaternion();
     if (matrix && matrix.length === 16) {
       const m = new THREE.Matrix4().fromArray(matrix);
@@ -227,9 +227,23 @@ export class HeadUnit {
     euler.x += THREE.MathUtils.degToRad(opts.rotX);
     euler.y += THREE.MathUtils.degToRad(opts.rotY);
     euler.z += THREE.MathUtils.degToRad(opts.rotZ);
-    this.root.quaternion.setFromEuler(euler);
+    const tQuat = new THREE.Quaternion().setFromEuler(euler);
+
+    // Temporal smoothing (EMA / slerp) to reduce jitter. alpha small = smoother.
+    const a = Math.max(0.05, Math.min(1, opts.poseAlpha ?? 1));
+    if (!this._sm || this._wasHidden) {
+      this._sm = { pos: tPos.clone(), scl: tScl, quat: tQuat.clone() };
+      this._wasHidden = false;
+    } else {
+      this._sm.pos.lerp(tPos, a);
+      this._sm.scl += (tScl - this._sm.scl) * a;
+      this._sm.quat.slerp(tQuat, a);
+    }
+    this.root.position.copy(this._sm.pos);
+    this.root.scale.setScalar(this._sm.scl);
+    this.root.quaternion.copy(this._sm.quat);
     this.root.visible = true;
   }
 
-  hide() { this.root.visible = false; }
+  hide() { this.root.visible = false; this._wasHidden = true; }
 }

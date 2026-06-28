@@ -159,6 +159,7 @@ export const DEFAULTS = {
   intensity: 1,
   exprStrength: 1,
   speaking: true,
+  smoothing: 0.65, // temporal smoothing for pose + expression (0 = raw, 1 = very smooth)
   // appearance
   faceColor: "#b58868", // Steve skin tone by default
   cubeColor: "#9b7253",

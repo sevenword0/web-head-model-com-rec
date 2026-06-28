@@ -265,6 +265,7 @@ class App {
         if (!primary) primary = face;
       } else {
         this.head.units[i].hide();
+        if (this._smoothBS) this._smoothBS[i] = null; // reset so it snaps on return
       }
     }
 
@@ -275,10 +276,21 @@ class App {
     else this.setStatus("얼굴을 찾는 중…");
   }
 
+  // Exponential moving average of a blendshape map (per slot) to de-jitter.
+  smoothBlendshapes(i, raw) {
+    const s = this.state.smoothing ?? 0.65;
+    const a = Math.max(0.12, 1 - s * 0.9); // expression a bit more responsive than pose
+    if (!this._smoothBS) this._smoothBS = [];
+    let prev = this._smoothBS[i];
+    if (!prev) { prev = new Map(raw); this._smoothBS[i] = prev; return prev; }
+    for (const [k, v] of raw) prev.set(k, (prev.get(k) || 0) + (v - (prev.get(k) || 0)) * a);
+    return prev;
+  }
+
   // Compute expression/mouth for one face and apply to the matching head unit.
   driveUnit(i, face) {
     const unit = this.head.units[i];
-    const live = face.blendshapes;
+    const live = this.smoothBlendshapes(i, face.blendshapes);
     let driving, emotion, intensity;
     if (this.state.emotionMode === "manual") {
       emotion = this.state.manualEmotion;
@@ -303,6 +315,7 @@ class App {
     if (this.state.speaking) morphMap.set("jawOpen", mouthOpen);
     unit.applyMorphs(morphMap, this.state.exprStrength);
 
+    const s = this.state.smoothing ?? 0.65;
     unit.align(face.landmarks, face.matrix, {
       mirror: this.state.mirror,
       scaleMul: this.state.scale,
@@ -312,6 +325,7 @@ class App {
       rotX: this.state.rotX,
       rotY: this.state.rotY,
       rotZ: this.state.rotZ,
+      poseAlpha: Math.max(0.05, 1 - s),
     });
   }
 
@@ -1027,6 +1041,7 @@ class App {
     this.bindRangeRaw("rotX");
     this.bindRangeRaw("rotY");
     this.bindRangeRaw("rotZ");
+    this.bindRange("smoothing", "smoothingVal", (v) => v.toFixed(2));
     $("mirrorToggle").addEventListener("change", (e) => {
       this.state.mirror = e.target.checked;
       this.autosave();
@@ -1170,6 +1185,7 @@ class App {
     setR("rotX");
     setR("rotY");
     setR("rotZ");
+    setR("smoothing", "smoothingVal", (v) => (+v).toFixed(2));
     setR("intensity", "intensityVal", (v) => (+v).toFixed(2));
     setR("exprStrength", "exprStrengthVal", (v) => (+v).toFixed(2));
     // checks
