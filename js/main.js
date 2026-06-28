@@ -440,13 +440,16 @@ class App {
     flash.classList.remove("fire");
     void flash.offsetWidth; // restart animation
     flash.classList.add("fire");
-    this.outCanvas.toBlob((blob) => { if (blob) this.addPhoto(blob); }, "image/png");
+    const png = (this.state.imageFormat || "jpg") === "png";
+    const type = png ? "image/png" : "image/jpeg";
+    this.outCanvas.toBlob((blob) => { if (blob) this.addPhoto(blob); }, type, png ? undefined : 0.92);
   }
 
   addPhoto(blob) {
     const url = URL.createObjectURL(blob);
+    const ext = (blob.type || "").includes("png") ? "png" : "jpg";
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const name = `head-studio-${stamp}.png`;
+    const name = `head-studio-${stamp}.${ext}`;
     const item = document.createElement("div");
     item.className = "dl-item";
     const img = document.createElement("img");
@@ -456,7 +459,7 @@ class App {
     a.href = url; a.download = name; a.textContent = `⬇ ${name}`;
     const meta = document.createElement("div");
     meta.className = "meta";
-    meta.textContent = `${(blob.size / 1024).toFixed(0)} KB · PNG`;
+    meta.textContent = `${(blob.size / 1024).toFixed(0)} KB · ${ext.toUpperCase()}`;
     info.appendChild(a); info.appendChild(meta);
     item.appendChild(img); item.appendChild(info);
     $("downloads").prepend(item);
@@ -1062,6 +1065,7 @@ class App {
     });
     $("photoBtn").addEventListener("click", () => this.takePhoto());
     $("shutterTimer").addEventListener("change", (e) => { this.state.shutterTimer = parseInt(e.target.value, 10) || 0; this.autosave(); });
+    $("imgFormat").addEventListener("change", (e) => { this.state.imageFormat = e.target.value; this.autosave(); });
     $("fullscreenBtn").addEventListener("click", () => this.toggleCaptureMode());
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement) this.setCaptureMode(false);
@@ -1280,6 +1284,7 @@ class App {
     $("audioToggle").checked = s.audio;
     $("showVideoToggle").checked = s.showVideo;
     $("shutterTimer").value = String(s.shutterTimer || 0);
+    $("imgFormat").value = s.imageFormat || "jpg";
     // emotion mode
     document.querySelectorAll("[data-emomode]").forEach((x) =>
       x.classList.toggle("active", x.dataset.emomode === s.emotionMode)

@@ -187,6 +187,7 @@ export const DEFAULTS = {
   showVideo: true,
   cameraId: "", // selected video input deviceId ("" = default)
   shutterTimer: 0, // photo shutter countdown (sec)
+  imageFormat: "jpg", // screenshot format: 'jpg' | 'png'
 };
 
 // Virtual environment light presets. Each light: [color, intensity, [dirX,dirY,dirZ]?].
