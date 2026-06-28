@@ -45,6 +45,7 @@ class App {
     this.lastSeen = [0, 0, 0];           // per-slot last detection time
     this.firstSeen = [0, 0, 0];          // start of current continuous presence
     this.running = false;
+    this.modelReady = false;
 
     this._paintColor = this.state.faceColor || PALETTE[0];
     this._erasing = false;
@@ -116,19 +117,21 @@ class App {
 
     this.recorder = new Recorder(this.outCanvas);
 
+    // Start rendering (and enable capture) as soon as the camera is on —
+    // screenshots/recording don't need the face model, which can load slowly.
+    $("recordBtn").disabled = false;
+    $("photoBtn").disabled = false;
+    this.modelReady = false;
+    this.running = true;
+    requestAnimationFrame(() => this.loop());
+
     this.setStatus("AI 모델 로딩 중… (최초 1회, 수십 초 걸릴 수 있어요)");
     try {
       await this.tracker.init();
+      this.modelReady = true;
     } catch (e) {
-      this.setStatus("모델 로딩 실패: " + e.message);
-      return;
+      this.setStatus("모델 로딩 실패(추적만 불가, 촬영은 가능): " + e.message);
     }
-
-    this.setStatus("", true);
-    $("recordBtn").disabled = false;
-    $("photoBtn").disabled = false;
-    this.running = true;
-    requestAnimationFrame(() => this.loop());
   }
 
   // ============ Capture / fullscreen mode ============
@@ -287,7 +290,7 @@ class App {
     ctx.drawImage(this.head.canvas, 0, 0, W, H);
 
     if (anyFresh && primary) this.updateReadoutFor(primary);
-    else this.setStatus("얼굴을 찾는 중…");
+    else this.setStatus(this.modelReady ? "얼굴을 찾는 중…" : "AI 모델 로딩 중…");
   }
 
   // Exponential moving average of a blendshape map (per slot) to de-jitter.
