@@ -223,6 +223,7 @@ class App {
         scaleMul: this.state.scale,
         offsetX: this.state.offsetX,
         offsetY: this.state.offsetY,
+        offsetZ: this.state.offsetZ,
         rotX: this.state.rotX,
         rotY: this.state.rotY,
         rotZ: this.state.rotZ,
@@ -793,6 +794,7 @@ class App {
     this.bindRange("scale", "scaleVal", (v) => v.toFixed(2));
     this.bindRange("offsetX", "offsetXVal", (v) => Math.round(v));
     this.bindRange("offsetY", "offsetYVal", (v) => Math.round(v));
+    this.bindRange("offsetZ", "offsetZVal", (v) => Math.round(v));
     this.bindRangeRaw("rotX");
     this.bindRangeRaw("rotY");
     this.bindRangeRaw("rotZ");
@@ -872,6 +874,7 @@ class App {
       }
     });
     $("exportBtn").addEventListener("click", () => Settings.exportJSON(this.state));
+    $("copyBtn").addEventListener("click", () => this.copySettings());
     $("importInput").addEventListener("change", async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -934,6 +937,7 @@ class App {
     setR("scale", "scaleVal", (v) => (+v).toFixed(2));
     setR("offsetX", "offsetXVal", (v) => Math.round(v));
     setR("offsetY", "offsetYVal", (v) => Math.round(v));
+    setR("offsetZ", "offsetZVal", (v) => Math.round(v));
     setR("rotX");
     setR("rotY");
     setR("rotZ");
@@ -1024,6 +1028,29 @@ class App {
       li.appendChild(span);
       li.appendChild(del);
       list.appendChild(li);
+    }
+  }
+
+  async copySettings() {
+    const text = JSON.stringify(this.state, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      this.flashSave("설정값을 클립보드에 복사했습니다 ✓");
+    } catch {
+      // Fallback for non-secure contexts / older browsers.
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        this.flashSave("설정값을 클립보드에 복사했습니다 ✓");
+      } catch {
+        this.flashSave("복사 실패 — JSON 내보내기를 사용하세요");
+      }
     }
   }
 

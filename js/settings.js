@@ -81,6 +81,7 @@ export const DEFAULTS = {
   scale: 1,
   offsetX: 0,
   offsetY: 0,
+  offsetZ: 0, // depth position (toward/away from camera)
   rotX: 0,
   rotY: 0,
   rotZ: 0,
@@ -105,7 +106,7 @@ export const DEFAULTS = {
   // render (3D)
   fov: 30,                // perspective field of view (deg); low = near-orthographic
   lightPreset: "studio",  // virtual environment light preset
-  lightAuto: false,       // auto-pick preset from the input video
+  lightAuto: true,        // auto-pick preset from the input video (default on)
   lightIntensity: 1,      // global light multiplier
   metalness: 0,           // material reflectivity
   roughness: 0.85,        // material roughness

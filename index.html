@@ -85,6 +85,11 @@
           <input type="range" id="offsetY" min="-200" max="200" step="1" value="0" />
         </div>
         <div class="field">
+          <label>깊이 위치 (Z) <span class="val" id="offsetZVal">0</span></label>
+          <input type="range" id="offsetZ" min="-400" max="400" step="1" value="0" />
+          <small class="hint">+ 카메라에 가깝게(크게/원근↑), − 멀게</small>
+        </div>
+        <div class="field">
           <label>회전 보정 X / Y / Z (°)</label>
           <div class="row3">
             <input type="range" id="rotX" min="-45" max="45" step="1" value="0" />
@@ -265,6 +270,9 @@
           <label class="btn file-btn">⬆ JSON 가져오기
             <input type="file" id="importInput" accept=".json" hidden />
           </label>
+        </div>
+        <div class="btn-row">
+          <button id="copyBtn" class="btn">📋 설정값 클립보드 복사</button>
         </div>
         <button id="resetBtn" class="btn ghost">↺ 기본값으로 초기화</button>
         <div id="saveStatus" class="save-status"></div>

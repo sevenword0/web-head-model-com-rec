@@ -394,11 +394,12 @@ export class HeadRenderer {
     const faceH = maxY - minY;
     const dim = Math.max(faceW, faceH) * 1.35 * opts.scaleMul;
 
-    // Convert pixel center -> ortho coords (origin center, y up).
+    // Convert pixel center -> camera coords (origin center, y up). z = depth.
     const ox = cx - W / 2 + opts.offsetX;
     const oy = -(cy - H / 2) + opts.offsetY;
+    const oz = opts.offsetZ || 0;
 
-    this.root.position.set(ox, oy, 0);
+    this.root.position.set(ox, oy, oz);
     this.root.scale.setScalar(dim);
 
     // Rotation: prefer head-pose matrix; fall back to eye-line roll only.
