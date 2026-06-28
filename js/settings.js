@@ -184,6 +184,7 @@ export const DEFAULTS = {
   // capture
   audio: true,
   showVideo: true,
+  cameraId: "", // selected video input deviceId ("" = default)
 };
 
 // Virtual environment light presets. Each light: [color, intensity, [dirX,dirY,dirZ]?].

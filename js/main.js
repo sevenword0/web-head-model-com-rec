@@ -79,10 +79,10 @@ class App {
     this.setStatus("카메라 권한 요청 중…");
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-        audio: false,
-      });
+      const vid = { width: { ideal: 1280 }, height: { ideal: 720 } };
+      if (this.state.cameraId) vid.deviceId = { exact: this.state.cameraId };
+      else vid.facingMode = "user";
+      stream = await navigator.mediaDevices.getUserMedia({ video: vid, audio: false });
     } catch (e) {
       this.setStatus("카메라를 사용할 수 없습니다: " + e.message);
       $("startBtn").disabled = false;
@@ -90,13 +90,8 @@ class App {
     }
     this.video.srcObject = stream;
     await this.video.play();
-
-    const w = this.video.videoWidth || 1280;
-    const h = this.video.videoHeight || 720;
-    this.outCanvas.width = w;
-    this.outCanvas.height = h;
-    // Match the stage (output) aspect ratio to the actual webcam input.
-    $("stageInner").style.aspectRatio = `${w} / ${h}`;
+    this.applyVideoSize();
+    this.populateCameras();
 
     // Dynamically load the heavy CDN-backed modules now.
     this.setStatus("3D 엔진 로딩 중…");
@@ -111,7 +106,7 @@ class App {
     }
     this.tracker = new FaceTracker();
 
-    this.head = new HeadRenderer(w, h);
+    this.head = new HeadRenderer(this.outCanvas.width, this.outCanvas.height);
     this.syncRenderToHead();
     this.syncUnits();
     if (this.state.lightAuto) this.startLightAuto();
@@ -130,6 +125,53 @@ class App {
     $("recordBtn").disabled = false;
     this.running = true;
     requestAnimationFrame(() => this.loop());
+  }
+
+  // ============ Camera selection ============
+  applyVideoSize() {
+    const w = this.video.videoWidth || 1280;
+    const h = this.video.videoHeight || 720;
+    if (this.outCanvas.width !== w || this.outCanvas.height !== h) {
+      this.outCanvas.width = w;
+      this.outCanvas.height = h;
+      if (this.head) this.head.resize(w, h);
+    }
+    $("stageInner").style.aspectRatio = `${w} / ${h}`;
+  }
+
+  async populateCameras() {
+    const sel = $("cameraSelect");
+    if (!sel) return;
+    let devs = [];
+    try { devs = await navigator.mediaDevices.enumerateDevices(); } catch { return; }
+    const cams = devs.filter((d) => d.kind === "videoinput");
+    if (!cams.length) return;
+    const track = this.video.srcObject && this.video.srcObject.getVideoTracks()[0];
+    const cur = (track && track.getSettings().deviceId) || this.state.cameraId || cams[0].deviceId;
+    sel.innerHTML = cams
+      .map((c, i) => `<option value="${c.deviceId}"${c.deviceId === cur ? " selected" : ""}>${c.label || "카메라 " + (i + 1)}</option>`)
+      .join("");
+  }
+
+  async switchCamera(deviceId) {
+    this.state.cameraId = deviceId;
+    this.autosave();
+    this.setStatus("카메라 전환 중…");
+    try {
+      if (this.video.srcObject) this.video.srcObject.getTracks().forEach((t) => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      this.video.srcObject = stream;
+      await this.video.play();
+      this.applyVideoSize();
+      this.lastVideoTime = -1;
+      this.setStatus("", true);
+      this.populateCameras();
+    } catch (e) {
+      this.setStatus("카메라 전환 실패: " + e.message);
+    }
   }
 
   // ============ Render loop ============
@@ -836,6 +878,10 @@ class App {
   bindUI() {
     $("startBtn").addEventListener("click", () => this.start());
     $("recordBtn").addEventListener("click", () => this.toggleRecord());
+    $("cameraSelect").addEventListener("change", (e) => {
+      if (this.video.srcObject) this.switchCamera(e.target.value);
+      else { this.state.cameraId = e.target.value; this.autosave(); }
+    });
 
     // tabs
     document.querySelectorAll(".tab").forEach((t) =>
