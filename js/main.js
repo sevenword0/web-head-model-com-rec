@@ -79,14 +79,15 @@ class App {
     this.setStatus("카메라 권한 요청 중…");
     let stream;
     try {
-      const vid = { width: { ideal: 1280 }, height: { ideal: 720 } };
-      if (this.state.cameraId) vid.deviceId = { exact: this.state.cameraId };
-      else vid.facingMode = "user";
-      stream = await navigator.mediaDevices.getUserMedia({ video: vid, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraint(this.state.cameraId), audio: false });
     } catch (e) {
-      this.setStatus("카메라를 사용할 수 없습니다: " + e.message);
-      $("startBtn").disabled = false;
-      return;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      } catch (e2) {
+        this.setStatus("카메라를 사용할 수 없습니다: " + e2.message);
+        $("startBtn").disabled = false;
+        return;
+      }
     }
     this.video.srcObject = stream;
     await this.video.play();
@@ -127,6 +128,22 @@ class App {
     requestAnimationFrame(() => this.loop());
   }
 
+  // ============ Capture / fullscreen mode ============
+  toggleCaptureMode() {
+    this.setCaptureMode(!document.body.classList.contains("capture-mode"));
+  }
+
+  setCaptureMode(on) {
+    document.body.classList.toggle("capture-mode", on);
+    $("fullscreenBtn").textContent = on ? "✕ 편집으로" : "⛶ 전체화면";
+    if (on) {
+      const el = document.getElementById("stage"); // includes controls so they stay clickable
+      if (el && el.requestFullscreen) el.requestFullscreen().catch(() => {});
+    } else if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
   // ============ Camera selection ============
   applyVideoSize() {
     const w = this.video.videoWidth || 1280;
@@ -145,24 +162,41 @@ class App {
     let devs = [];
     try { devs = await navigator.mediaDevices.enumerateDevices(); } catch { return; }
     const cams = devs.filter((d) => d.kind === "videoinput");
-    if (!cams.length) return;
     const track = this.video.srcObject && this.video.srcObject.getVideoTracks()[0];
-    const cur = (track && track.getSettings().deviceId) || this.state.cameraId || cams[0].deviceId;
-    sel.innerHTML = cams
-      .map((c, i) => `<option value="${c.deviceId}"${c.deviceId === cur ? " selected" : ""}>${c.label || "카메라 " + (i + 1)}</option>`)
+    const cur = this.state.cameraId || (track && track.getSettings().deviceId) || "";
+    // Always offer front/back via facingMode (works on iPad/iOS where the rear
+    // camera often isn't listed by enumerateDevices).
+    const opts = [["facing:user", "전면 카메라"], ["facing:environment", "후면 카메라"]];
+    cams.forEach((c, i) => opts.push([c.deviceId, c.label || "카메라 " + (i + 1)]));
+    sel.innerHTML = opts
+      .map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`)
       .join("");
   }
 
-  async switchCamera(deviceId) {
-    this.state.cameraId = deviceId;
+  // Build a getUserMedia video constraint from a camera id (deviceId or facing:*)
+  videoConstraint(id) {
+    const base = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (id && id.startsWith("facing:")) base.facingMode = { ideal: id.slice(7) };
+    else if (id) base.deviceId = { exact: id };
+    else base.facingMode = "user";
+    return base;
+  }
+
+  async switchCamera(id) {
+    this.state.cameraId = id;
     this.autosave();
     this.setStatus("카메라 전환 중…");
     try {
       if (this.video.srcObject) this.video.srcObject.getTracks().forEach((t) => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: this.videoConstraint(id), audio: false });
+      } catch (e1) {
+        // exact facing/deviceId can fail on some devices → retry relaxed
+        const c = this.videoConstraint(id);
+        if (c.deviceId) c.deviceId = { ideal: id };
+        stream = await navigator.mediaDevices.getUserMedia({ video: c, audio: false });
+      }
       this.video.srcObject = stream;
       await this.video.play();
       this.applyVideoSize();
@@ -373,7 +407,8 @@ class App {
 
   addDownload(blob) {
     const url = URL.createObjectURL(blob);
-    const ext = (blob.type.includes("mp4") ? "mp4" : "webm");
+    const isMp4 = (blob.type || "").includes("mp4");
+    const ext = isMp4 ? "mp4" : "webm";
     const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const name = `head-studio-${stamp}.${ext}`;
     const item = document.createElement("div");
@@ -382,14 +417,59 @@ class App {
     v.src = url;
     v.controls = true;
     const info = document.createElement("div");
-    info.innerHTML = `<a href="${url}" download="${name}">⬇ ${name}</a><div class="meta">${(
-      blob.size /
-      1024 /
-      1024
-    ).toFixed(1)} MB · ${blob.type || "video/webm"}</div>`;
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.textContent = `⬇ ${name}`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${(blob.size / 1024 / 1024).toFixed(1)} MB · ${blob.type || "video/webm"}`;
+    info.appendChild(a);
+    info.appendChild(meta);
+    if (!isMp4) {
+      const conv = document.createElement("button");
+      conv.className = "btn small";
+      conv.textContent = "🎞 MP4로 변환";
+      conv.addEventListener("click", () => this.transcodeToMp4(blob, conv));
+      info.appendChild(conv);
+    }
     item.appendChild(v);
     item.appendChild(info);
     $("downloads").prepend(item);
+  }
+
+  // ---- MP4 transcode via ffmpeg.wasm (lazy, optional) ----
+  async ensureFFmpeg() {
+    if (this._ffmpeg) return this._ffmpeg;
+    const { FFmpeg } = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js");
+    const { toBlobURL } = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js");
+    const ff = new FFmpeg();
+    const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
+    await ff.load({
+      coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+      wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+    this._ffmpeg = ff;
+    return ff;
+  }
+
+  async transcodeToMp4(blob, btn) {
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "변환 중… (최초 로딩 김)";
+    try {
+      const ff = await this.ensureFFmpeg();
+      const { fetchFile } = await import("https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/dist/esm/index.js");
+      await ff.writeFile("in.webm", await fetchFile(blob));
+      await ff.exec(["-i", "in.webm", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-c:a", "aac", "out.mp4"]);
+      const data = await ff.readFile("out.mp4");
+      const mp4 = new Blob([data.buffer], { type: "video/mp4" });
+      this.addDownload(mp4);
+      btn.textContent = "MP4 생성됨 ✓";
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = orig;
+      alert("MP4 변환에 실패했습니다: " + (e?.message || e) +
+        "\n\nWebM 파일은 그대로 저장할 수 있어요. (아이패드/사파리에서는 녹화가 자동으로 MP4로 저장됩니다)");
+    }
   }
 
   // ============ Settings <-> head units ============
@@ -881,6 +961,10 @@ class App {
     $("cameraSelect").addEventListener("change", (e) => {
       if (this.video.srcObject) this.switchCamera(e.target.value);
       else { this.state.cameraId = e.target.value; this.autosave(); }
+    });
+    $("fullscreenBtn").addEventListener("click", () => this.toggleCaptureMode());
+    document.addEventListener("fullscreenchange", () => {
+      if (!document.fullscreenElement) this.setCaptureMode(false);
     });
 
     // tabs

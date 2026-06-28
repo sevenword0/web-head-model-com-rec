@@ -23,7 +23,7 @@
 
   <main class="layout">
     <!-- ===== 무대 (Stage) ===== -->
-    <section class="stage">
+    <section class="stage" id="stage">
       <div class="stage-inner" id="stageInner">
         <video id="inputVideo" playsinline autoplay muted></video>
         <canvas id="outputCanvas"></canvas>
@@ -37,6 +37,7 @@
           <option value="">카메라 (시작 후 선택)</option>
         </select>
         <span id="recTimer" class="rec-timer hidden">00:00</span>
+        <button id="fullscreenBtn" class="btn">⛶ 전체화면</button>
         <label class="inline-check">
           <input type="checkbox" id="audioToggle" checked /> 마이크 녹음
         </label>

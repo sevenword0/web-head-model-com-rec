@@ -10,12 +10,15 @@ export class Recorder {
   }
 
   static pickMimeType() {
+    // Prefer MP4 where the browser can record it natively (Safari / iPad / iOS).
     const candidates = [
+      "video/mp4;codecs=avc1.640028,mp4a.40.2",
+      "video/mp4;codecs=h264,aac",
+      "video/mp4",
       "video/webm;codecs=vp9,opus",
       "video/webm;codecs=vp8,opus",
       "video/webm;codecs=h264,opus",
       "video/webm",
-      "video/mp4",
     ];
     for (const c of candidates) {
       if (window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c;
