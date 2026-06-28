@@ -27,12 +27,21 @@
       <div class="stage-inner" id="stageInner">
         <video id="inputVideo" playsinline autoplay muted></video>
         <canvas id="outputCanvas"></canvas>
+        <div id="countdown" class="countdown hidden"></div>
+        <div id="flash" class="flash"></div>
         <div id="status" class="status">카메라 시작을 눌러주세요</div>
       </div>
 
       <div class="stage-controls">
         <button id="startBtn" class="btn primary">▶ 카메라 시작</button>
         <button id="recordBtn" class="btn danger" disabled>● 녹화</button>
+        <button id="photoBtn" class="btn" disabled>📷 사진</button>
+        <select id="shutterTimer" class="sel-input cam-select" title="셔터 타이머">
+          <option value="0">타이머 끔</option>
+          <option value="3">3초</option>
+          <option value="5">5초</option>
+          <option value="10">10초</option>
+        </select>
         <select id="cameraSelect" class="sel-input cam-select" title="카메라 선택">
           <option value="">카메라 (시작 후 선택)</option>
         </select>

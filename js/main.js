@@ -126,6 +126,7 @@ class App {
 
     this.setStatus("", true);
     $("recordBtn").disabled = false;
+    $("photoBtn").disabled = false;
     this.running = true;
     requestAnimationFrame(() => this.loop());
   }
@@ -399,6 +400,65 @@ class App {
       const bar = wrap.querySelector(`[data-k="${k}"] i`);
       if (bar) bar.style.width = Math.round((live.get(k) || 0) * 100) + "%";
     }
+  }
+
+  // ============ Photo / shutter timer ============
+  async takePhoto() {
+    if (!this.outCanvas) return;
+    const btn = $("photoBtn");
+    btn.disabled = true;
+    const t = this.state.shutterTimer || 0;
+    if (t > 0) await this.runCountdown(t);
+    this.captureScreenshot();
+    btn.disabled = false;
+  }
+
+  runCountdown(sec) {
+    return new Promise((resolve) => {
+      const el = $("countdown");
+      let n = sec;
+      el.textContent = n;
+      el.classList.remove("hidden");
+      this._cdTimer = setInterval(() => {
+        n -= 1;
+        if (n <= 0) {
+          clearInterval(this._cdTimer);
+          el.classList.add("hidden");
+          resolve();
+        } else {
+          el.textContent = n;
+        }
+      }, 1000);
+    });
+  }
+
+  captureScreenshot() {
+    const flash = $("flash");
+    flash.classList.remove("fire");
+    void flash.offsetWidth; // restart animation
+    flash.classList.add("fire");
+    this.outCanvas.toBlob((blob) => { if (blob) this.addPhoto(blob); }, "image/png");
+  }
+
+  addPhoto(blob) {
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const name = `head-studio-${stamp}.png`;
+    const item = document.createElement("div");
+    item.className = "dl-item";
+    const img = document.createElement("img");
+    img.src = url;
+    const info = document.createElement("div");
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.textContent = `⬇ ${name}`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${(blob.size / 1024).toFixed(0)} KB · PNG`;
+    info.appendChild(a); info.appendChild(meta);
+    item.appendChild(img); item.appendChild(info);
+    $("downloads").prepend(item);
+    // auto-download so it works even in fullscreen capture mode
+    a.click();
   }
 
   // ============ Recording ============
@@ -954,6 +1014,11 @@ class App {
       span.textContent = name;
       span.title = "현재 편집 얼굴로 불러오기";
       span.addEventListener("click", () => this.loadHeadPresetToEditor(name));
+      const copy = document.createElement("button");
+      copy.textContent = "📋";
+      copy.title = "클립보드에 복사";
+      copy.style.color = "var(--accent)";
+      copy.addEventListener("click", () => this.copyHeadPreset(name));
       const del = document.createElement("button");
       del.textContent = "✕";
       del.addEventListener("click", () => {
@@ -965,6 +1030,7 @@ class App {
         this.syncUnits();
       });
       li.appendChild(span);
+      li.appendChild(copy);
       li.appendChild(del);
       list.appendChild(li);
     }
@@ -991,6 +1057,8 @@ class App {
       if (this.video.srcObject) this.switchCamera(e.target.value);
       else { this.state.cameraId = e.target.value; this.autosave(); }
     });
+    $("photoBtn").addEventListener("click", () => this.takePhoto());
+    $("shutterTimer").addEventListener("change", (e) => { this.state.shutterTimer = parseInt(e.target.value, 10) || 0; this.autosave(); });
     $("fullscreenBtn").addEventListener("click", () => this.toggleCaptureMode());
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement) this.setCaptureMode(false);
@@ -1208,6 +1276,7 @@ class App {
     $("speakToggle").checked = s.speaking;
     $("audioToggle").checked = s.audio;
     $("showVideoToggle").checked = s.showVideo;
+    $("shutterTimer").value = String(s.shutterTimer || 0);
     // emotion mode
     document.querySelectorAll("[data-emomode]").forEach((x) =>
       x.classList.toggle("active", x.dataset.emomode === s.emotionMode)
@@ -1291,13 +1360,12 @@ class App {
     }
   }
 
-  async copySettings() {
-    const text = JSON.stringify(this.state, null, 2);
+  async copyText(text, okMsg) {
     try {
       await navigator.clipboard.writeText(text);
-      this.flashSave("설정값을 클립보드에 복사했습니다 ✓");
+      this.flashSave(okMsg);
+      return true;
     } catch {
-      // Fallback for non-secure contexts / older browsers.
       try {
         const ta = document.createElement("textarea");
         ta.value = text;
@@ -1307,11 +1375,23 @@ class App {
         ta.select();
         document.execCommand("copy");
         document.body.removeChild(ta);
-        this.flashSave("설정값을 클립보드에 복사했습니다 ✓");
+        this.flashSave(okMsg);
+        return true;
       } catch {
         this.flashSave("복사 실패 — JSON 내보내기를 사용하세요");
+        return false;
       }
     }
+  }
+
+  copySettings() {
+    this.copyText(JSON.stringify(this.state, null, 2), "설정값을 클립보드에 복사했습니다 ✓");
+  }
+
+  copyHeadPreset(name) {
+    const b = Settings.getHeadPresets()[name];
+    if (!b) return;
+    this.copyText(JSON.stringify({ headPreset: name, bundle: b }, null, 2), `프리셋 "${name}"을 클립보드에 복사했습니다 ✓`);
   }
 
   flashSave(msg) {

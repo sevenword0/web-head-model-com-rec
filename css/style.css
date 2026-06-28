@@ -88,6 +88,18 @@ body {
 }
 .status.hidden { display: none; }
 
+.countdown {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 28vh; font-weight: 800; color: #fff; pointer-events: none;
+  text-shadow: 0 4px 30px rgba(0,0,0,0.7); z-index: 8;
+}
+.flash {
+  position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 9;
+}
+.flash.fire { animation: flash 0.4s ease-out; }
+@keyframes flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+.dl-item img { width: 120px; border-radius: 6px; background: #000; }
+
 .stage-controls {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
