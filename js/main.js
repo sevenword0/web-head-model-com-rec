@@ -997,6 +997,8 @@ class App {
         this.autosave();
       });
     }
+    $("copyAvatarBtn").addEventListener("click", () => this.copyCurrentAvatar());
+    $("pasteAvatarBtn").addEventListener("click", () => this.pasteAvatar());
     $("saveHeadPresetBtn").addEventListener("click", () => {
       const name = $("headPresetName").value.trim();
       if (!name) return this.flashSave("프리셋 이름을 입력하세요");
@@ -1400,6 +1402,36 @@ class App {
     const b = Settings.getHeadPresets()[name];
     if (!b) return;
     this.copyText(JSON.stringify({ headPreset: name, bundle: b }, null, 2), `프리셋 "${name}"을 클립보드에 복사했습니다 ✓`);
+  }
+
+  copyCurrentAvatar() {
+    const name = $("headPresetName").value.trim() || "외형";
+    this.copyText(JSON.stringify({ headPreset: name, bundle: Settings.avatarBundle(this.state) }, null, 2),
+      "현재 외형을 클립보드에 복사했습니다 ✓");
+  }
+
+  // Read a copied avatar/preset from the clipboard, apply to the editor (+save).
+  async pasteAvatar() {
+    let text = "";
+    try { text = await navigator.clipboard.readText(); } catch {}
+    if (!text) text = prompt("붙여넣을 외형 JSON을 입력하세요") || "";
+    if (!text.trim()) return;
+    let obj;
+    try { obj = JSON.parse(text); } catch { return this.flashSave("붙여넣기 실패 — JSON 형식이 아닙니다"); }
+    const bundle = obj && obj.bundle ? obj.bundle : obj;
+    if (!bundle || !bundle.paintFaces) return this.flashSave("붙여넣기 실패 — 외형 데이터가 아닙니다");
+    Object.assign(this.state, {
+      headType: bundle.headType || "cube",
+      faceMode: bundle.faceMode || "painted",
+      gridN: bundle.gridN || 8,
+      paintFaces: JSON.parse(JSON.stringify(bundle.paintFaces)),
+      faceColor: bundle.faceColor, cubeColor: bundle.cubeColor, eyeColor: bundle.eyeColor,
+      browColor: bundle.browColor, mouthColor: bundle.mouthColor, cheekColor: bundle.cheekColor,
+    });
+    const name = (obj && obj.headPreset) || "";
+    if (name) { Settings.saveHeadPreset(name, Settings.avatarBundle(this.state)); this.renderHeadPresetList(); this.populateSlotSelects(); }
+    this.applyStateToUI();
+    this.flashSave(name ? `"${name}" 외형을 붙여넣고 프리셋 저장 ✓` : "외형을 붙여넣었습니다 ✓");
   }
 
   flashSave(msg) {
