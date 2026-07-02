@@ -154,10 +154,12 @@ export function computeBlocks(layers, N, params) {
   const k = clamp01(params.intensity ?? 1);
   const p = emoParams(emotion, k);
   const out = [];
+  // Each block carries the SAME scale (sx,sy) and rotation as the whole-shape
+  // affine, so the blocks tile seamlessly (no gaps) — like the flat rig.
   const tf = (x, y, c, s, sx, sy, rot, dy) => {
     let vx = (x + 0.5 - s.cx) * sx, vy = (y + 0.5 - s.cy) * sy;
     if (rot) { const co = Math.cos(rot), si = Math.sin(rot); const nx = vx * co - vy * si, ny = vx * si + vy * co; vx = nx; vy = ny; }
-    out.push({ cx: s.cx + vx, cy: s.cy + vy + dy, color: c });
+    out.push({ cx: s.cx + vx, cy: s.cy + vy + dy, sx, sy, rot, color: c });
   };
   if (layers && layers.brows) {
     const sides = { L: stats(layers.brows, N, "L"), R: stats(layers.brows, N, "R") };

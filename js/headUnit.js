@@ -59,6 +59,10 @@ export class HeadUnit {
     this.cubeGroup.add(this.blockMesh);
     this._m4 = new THREE.Matrix4();
     this._col = new THREE.Color();
+    this._q = new THREE.Quaternion();
+    this._pos = new THREE.Vector3();
+    this._scl = new THREE.Vector3();
+    this._zAxis = new THREE.Vector3(0, 0, 1);
   }
 
   _updateBlocks(params) {
@@ -74,8 +78,12 @@ export class HeadUnit {
       if (i >= MAX_BLOCKS) break;
       const lx = b.cx / N - 0.5;
       const ly = 0.5 - b.cy / N;
-      this._m4.makeScale(cell, cell, t);
-      this._m4.setPosition(lx, ly, z);
+      // Match each block's size + orientation to the shape transform so blocks
+      // stay joined (no gaps) under scale/tilt — a slight overlap (1.02) avoids seams.
+      this._pos.set(lx, ly, z);
+      this._q.setFromAxisAngle(this._zAxis, -(b.rot || 0)); // grid y-down → local y-up
+      this._scl.set(cell * b.sx * 1.02, cell * b.sy * 1.02, t);
+      this._m4.compose(this._pos, this._q, this._scl);
       this.blockMesh.setMatrixAt(i, this._m4);
       this.blockMesh.setColorAt(i, this._col.set(b.color));
       i++;
