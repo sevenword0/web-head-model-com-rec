@@ -4,7 +4,9 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { drawPixelFace } from "./pixelFace.js";
-import { drawRiggedFace, drawLayeredStatic } from "./faceRig.js";
+import { drawRiggedFace, drawLayeredStatic, computeBlocks } from "./faceRig.js";
+
+const MAX_BLOCKS = 800;
 
 // Landmark indices (MediaPipe FaceMesh)
 const L = { leftEye: 33, rightEye: 263, chin: 152, foreheadTop: 10, leftCheek: 234, rightCheek: 454 };
@@ -34,10 +36,61 @@ export class HeadUnit {
       brow: "#46352b", mouth: "#6c4f33", cheek: "#e88f8f",
     };
 
+    // 3D extruded blocks for eyes/brows/mouth (optional stereoscopic mode)
+    this.blockMode = false;
+    this.blockThickness = 0.12;
+    this.blockOffset = 0.02;
+
     this._buildCube();
+    this._buildBlocks();
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.setHeadType("cube");
+  }
+
+  _buildBlocks() {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+    this.blockMat = mat;
+    this.blockMesh = new THREE.InstancedMesh(geo, mat, MAX_BLOCKS);
+    this.blockMesh.count = 0;
+    this.blockMesh.frustumCulled = false;
+    this.blockMesh.visible = false;
+    this.cubeGroup.add(this.blockMesh);
+    this._m4 = new THREE.Matrix4();
+    this._col = new THREE.Color();
+  }
+
+  _updateBlocks(params) {
+    const N = this.paintGridN;
+    const layers = this.paintFaces && this.paintFaces.front;
+    if (!layers) { this.blockMesh.visible = false; return; }
+    const cell = 1 / N;
+    const t = this.blockThickness;
+    const z = 0.5 + this.blockOffset + t / 2;
+    const blocks = computeBlocks(layers, N, params);
+    let i = 0;
+    for (const b of blocks) {
+      if (i >= MAX_BLOCKS) break;
+      const lx = b.cx / N - 0.5;
+      const ly = 0.5 - b.cy / N;
+      this._m4.makeScale(cell, cell, t);
+      this._m4.setPosition(lx, ly, z);
+      this.blockMesh.setMatrixAt(i, this._m4);
+      this.blockMesh.setColorAt(i, this._col.set(b.color));
+      i++;
+    }
+    this.blockMesh.count = i;
+    this.blockMesh.instanceMatrix.needsUpdate = true;
+    if (this.blockMesh.instanceColor) this.blockMesh.instanceColor.needsUpdate = true;
+    this.blockMesh.visible = true;
+  }
+
+  setBlockOptions(o) {
+    if (o.blockMode !== undefined) this.blockMode = o.blockMode;
+    if (o.blockThickness !== undefined) this.blockThickness = o.blockThickness;
+    if (o.blockOffset !== undefined) this.blockOffset = o.blockOffset;
+    this._frontDirty = true;
   }
 
   setSize(w, h) { this.width = w; this.height = h; }
@@ -111,8 +164,17 @@ export class HeadUnit {
       if (this._frontDirty || hash !== this._frontHash) {
         const layers = this.paintFaces.front;
         const has = layers && (layers.base || layers.brows || layers.eyes || layers.mouth);
-        if (has) drawRiggedFace(f.ctx, size, layers, this.paintGridN, params, this.colors.face);
-        else { f.ctx.fillStyle = this.colors.cube; f.ctx.fillRect(0, 0, size, size); }
+        if (this.blockMode && has) {
+          // flat base on the texture; eyes/brows/mouth become 3D blocks
+          drawLayeredStatic(f.ctx, size, { base: layers.base }, this.paintGridN, this.colors.face);
+          this._updateBlocks(params);
+        } else if (has) {
+          drawRiggedFace(f.ctx, size, layers, this.paintGridN, params, this.colors.face);
+          this.blockMesh.visible = false;
+        } else {
+          f.ctx.fillStyle = this.colors.cube; f.ctx.fillRect(0, 0, size, size);
+          this.blockMesh.visible = false;
+        }
         f.texture.needsUpdate = true;
         this._frontDirty = false;
         this._frontHash = hash;
@@ -120,6 +182,7 @@ export class HeadUnit {
     } else {
       drawPixelFace(f.ctx, size, { colors, ...params });
       f.texture.needsUpdate = true;
+      this.blockMesh.visible = false;
     }
   }
 
@@ -147,6 +210,7 @@ export class HeadUnit {
     if (props) Object.assign(this.matProps, props);
     const { metalness, roughness } = this.matProps;
     for (const mat of this.cubeMaterials) { mat.metalness = metalness; mat.roughness = roughness; mat.needsUpdate = true; }
+    if (this.blockMat) { this.blockMat.metalness = metalness; this.blockMat.roughness = roughness; this.blockMat.needsUpdate = true; }
     if (this.glb) {
       this.glb.traverse((o) => {
         if (o.isMesh && o.material) {

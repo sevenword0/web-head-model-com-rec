@@ -183,6 +183,9 @@ export const DEFAULTS = {
   metalness: 0,           // material reflectivity
   roughness: 0.85,        // material roughness
   bevel: 0,               // cube corner bevel (0 = sharp, up to 0.49 = round)
+  blockFace: false,       // render eyes/brows/mouth as 3D extruded blocks
+  blockThickness: 0.12,   // block depth
+  blockOffset: 0.02,      // gap from the cube front face
   // capture
   audio: true,
   showVideo: true,

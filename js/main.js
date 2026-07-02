@@ -600,6 +600,11 @@ class App {
     this.head.setLightPreset(this.state.lightPreset);
     this.head.setMaterialProps({ metalness: this.state.metalness, roughness: this.state.roughness });
     this.head.setBevel(this.state.bevel || 0);
+    this.head.setBlockOptions({
+      blockMode: !!this.state.blockFace,
+      blockThickness: this.state.blockThickness,
+      blockOffset: this.state.blockOffset,
+    });
   }
 
   applyLightPreset(key, fromAuto) {
@@ -972,6 +977,23 @@ class App {
       this.state.bevel = parseFloat(e.target.value);
       $("bevelVal").textContent = this.state.bevel.toFixed(2);
       if (this.head) this.head.setBevel(this.state.bevel);
+      this.autosave();
+    });
+    $("blockFace").addEventListener("change", (e) => {
+      this.state.blockFace = e.target.checked;
+      if (this.head) this.head.setBlockOptions({ blockMode: this.state.blockFace });
+      this.autosave();
+    });
+    $("blockThickness").addEventListener("input", (e) => {
+      this.state.blockThickness = parseFloat(e.target.value);
+      $("blockThicknessVal").textContent = this.state.blockThickness.toFixed(2);
+      if (this.head) this.head.setBlockOptions({ blockThickness: this.state.blockThickness });
+      this.autosave();
+    });
+    $("blockOffset").addEventListener("input", (e) => {
+      this.state.blockOffset = parseFloat(e.target.value);
+      $("blockOffsetVal").textContent = this.state.blockOffset.toFixed(2);
+      if (this.head) this.head.setBlockOptions({ blockOffset: this.state.blockOffset });
       this.autosave();
     });
   }
@@ -1413,6 +1435,9 @@ class App {
     $("metalness").value = s.metalness; $("metalnessVal").textContent = (+s.metalness).toFixed(2);
     $("roughness").value = s.roughness; $("roughnessVal").textContent = (+s.roughness).toFixed(2);
     $("bevel").value = s.bevel || 0; $("bevelVal").textContent = (+(s.bevel || 0)).toFixed(2);
+    $("blockFace").checked = !!s.blockFace;
+    $("blockThickness").value = s.blockThickness ?? 0.12; $("blockThicknessVal").textContent = (+(s.blockThickness ?? 0.12)).toFixed(2);
+    $("blockOffset").value = s.blockOffset ?? 0.02; $("blockOffsetVal").textContent = (+(s.blockOffset ?? 0.02)).toFixed(2);
 
     this.syncRenderToHead();
     this.syncUnits();

@@ -105,6 +105,10 @@ export class HeadRenderer {
     for (const u of this.units) u.setBevel(r);
   }
 
+  setBlockOptions(o) {
+    for (const u of this.units) u.setBlockOptions(o);
+  }
+
   resize(w, h) {
     this.width = w;
     this.height = h;

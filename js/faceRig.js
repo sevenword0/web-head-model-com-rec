@@ -147,6 +147,46 @@ function drawMouth(ctx, grid, N, size, p, mouthOpen, mouthWide) {
   ctx.restore();
 }
 
+// Compute transformed cell centers (grid units) for the animated feature layers
+// — used to place 3D extruded blocks that match the flat rig.
+export function computeBlocks(layers, N, params) {
+  const emotion = params.emotion || "neutral";
+  const k = clamp01(params.intensity ?? 1);
+  const p = emoParams(emotion, k);
+  const out = [];
+  const tf = (x, y, c, s, sx, sy, rot, dy) => {
+    let vx = (x + 0.5 - s.cx) * sx, vy = (y + 0.5 - s.cy) * sy;
+    if (rot) { const co = Math.cos(rot), si = Math.sin(rot); const nx = vx * co - vy * si, ny = vx * si + vy * co; vx = nx; vy = ny; }
+    out.push({ cx: s.cx + vx, cy: s.cy + vy + dy, color: c });
+  };
+  if (layers && layers.brows) {
+    const sides = { L: stats(layers.brows, N, "L"), R: stats(layers.brows, N, "R") };
+    forEachCell(layers.brows, N, (x, y, c) => {
+      const s = sides[x < N / 2 ? "L" : "R"]; if (!s) return;
+      tf(x, y, c, s, 1, 1, x < N / 2 ? p.browTilt : -p.browTilt, p.browTransY);
+    });
+  }
+  if (layers && layers.eyes) {
+    const sides = { L: stats(layers.eyes, N, "L"), R: stats(layers.eyes, N, "R") };
+    forEachCell(layers.eyes, N, (x, y, c) => {
+      const side = x < N / 2 ? "L" : "R"; const s = sides[side]; if (!s) return;
+      const blink = side === "L" ? params.blinkL ?? 0 : params.blinkR ?? 0;
+      const sy = Math.max(0.12, p.eyeSize * p.eyeScaleY * (1 - clamp01(blink) * 0.92));
+      tf(x, y, c, s, p.eyeSize, sy, side === "L" ? -p.eyeTilt : p.eyeTilt, 0);
+    });
+  }
+  if (layers && layers.mouth) {
+    const s = stats(layers.mouth, N, null);
+    if (s) {
+      const sx = (params.mouthWide ?? 1) * p.mouthScaleX;
+      const sy = 1 + clamp01(params.mouthOpen ?? 0) * 1.3;
+      const top = { cx: s.cx, cy: s.minY };
+      forEachCell(layers.mouth, N, (x, y, c) => tf(x, y, c, top, sx, sy, 0, p.mouthDY));
+    }
+  }
+  return out;
+}
+
 /** Composite painted layers statically (no animation) — used for cube sides. */
 export function drawLayeredStatic(ctx, size, layers, N, faceColor) {
   ctx.fillStyle = faceColor;
