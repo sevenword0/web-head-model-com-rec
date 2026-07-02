@@ -101,6 +101,10 @@ export class HeadRenderer {
     for (const u of this.units) u.applyMaterialProps(this.matProps);
   }
 
+  setBevel(r) {
+    for (const u of this.units) u.setBevel(r);
+  }
+
   resize(w, h) {
     this.width = w;
     this.height = h;

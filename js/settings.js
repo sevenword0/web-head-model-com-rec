@@ -182,6 +182,7 @@ export const DEFAULTS = {
   lightIntensity: 1,      // global light multiplier
   metalness: 0,           // material reflectivity
   roughness: 0.85,        // material roughness
+  bevel: 0,               // cube corner bevel (0 = sharp, up to 0.49 = round)
   // capture
   audio: true,
   showVideo: true,

@@ -2,6 +2,7 @@
 // Aligned onto one tracked face; carries its own avatar look (colors + layers).
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { drawPixelFace } from "./pixelFace.js";
 import { drawRiggedFace, drawLayeredStatic } from "./faceRig.js";
 
@@ -125,6 +126,22 @@ export class HeadUnit {
   setFaceMode(mode) { if (mode !== this.faceMode) this._faceDirty = true; this.faceMode = mode; }
   setPaintData(paintFaces, gridN) { this.paintFaces = paintFaces; if (gridN) this.paintGridN = gridN; this._faceDirty = true; }
   setColors(c) { Object.assign(this.colors, c); this.refreshCubeColors(); }
+
+  // Rounded-corner (bevel) cube. Keeps the 6 per-face material groups; falls
+  // back to a plain box if the rounded geometry loses them.
+  setBevel(r) {
+    this.bevel = r;
+    const old = this.cube.geometry;
+    let geo;
+    if (r > 0.005) {
+      geo = new RoundedBoxGeometry(1, 1, 1, 4, Math.min(0.49, r));
+      if (!geo.groups || geo.groups.length < 6) { geo.dispose(); geo = new THREE.BoxGeometry(1, 1, 1); }
+    } else {
+      geo = new THREE.BoxGeometry(1, 1, 1);
+    }
+    this.cube.geometry = geo;
+    if (old) old.dispose();
+  }
 
   applyMaterialProps(props) {
     if (props) Object.assign(this.matProps, props);

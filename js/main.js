@@ -7,6 +7,7 @@ import { Recorder } from "./recorder.js";
 import { analyzeEmotion, synthesizeBlendshapes, EMOTIONS } from "./emotion.js";
 import { drawPixelFace } from "./pixelFace.js";
 import { drawLayeredStatic, REGIONS } from "./faceRig.js";
+import { imageToGrid, centerSquare } from "./imagePix.js";
 import * as Settings from "./settings.js";
 import { buildSteveLayers, LAYER_KEYS } from "./settings.js";
 
@@ -59,6 +60,7 @@ class App {
     this.bindUI();
     this.bindPaintEditor();
     this.bindRenderControls();
+    this.bindPixelArt();
     this.bindSlotsAndHeadPresets();
     this.applyStateToUI();
     this.renderHeadPresetList();
@@ -597,6 +599,7 @@ class App {
     this.head.lightIntensity = this.state.lightIntensity;
     this.head.setLightPreset(this.state.lightPreset);
     this.head.setMaterialProps({ metalness: this.state.metalness, roughness: this.state.roughness });
+    this.head.setBevel(this.state.bevel || 0);
   }
 
   applyLightPreset(key, fromAuto) {
@@ -965,6 +968,84 @@ class App {
       if (this.head) this.head.setMaterialProps({ roughness: this.state.roughness });
       this.autosave();
     });
+    $("bevel").addEventListener("input", (e) => {
+      this.state.bevel = parseFloat(e.target.value);
+      $("bevelVal").textContent = this.state.bevel.toFixed(2);
+      if (this.head) this.head.setBevel(this.state.bevel);
+      this.autosave();
+    });
+  }
+
+  // ============ Photo → pixel-art mapping ============
+  bindPixelArt() {
+    $("selfieBtn").addEventListener("click", () => this.captureSelfiePixel());
+    $("pixImageInput").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (file) this.loadImagePixel(file);
+      e.target.value = "";
+    });
+  }
+
+  pixOpts() {
+    const mode = $("pixPalette").value;
+    return {
+      N: parseInt($("pixRes").value, 10) || 24,
+      colorCount: parseInt($("pixColors").value, 10) || 8,
+      paletteMode: mode,
+      palette: mode === "palette" ? PALETTE : null,
+    };
+  }
+
+  applyPixelGridToFace(source, crop) {
+    const o = this.pixOpts();
+    const grid = imageToGrid(source, crop, o.N, o);
+    this.state.gridN = o.N;
+    this.resampleAllGrids(o.N);
+    // put the photo on the base layer of the selected face; clear overlays
+    this.state.paintFaces[this._selFace] = { base: grid, brows: null, eyes: null, mouth: null };
+    this.state.faceMode = "painted";
+    $("pixInfo").textContent = `${o.N}×${o.N} · ${o.colorCount}색(${o.paletteMode === "palette" ? "지정" : "자동"}) → "${this._selFace}"면에 매핑됨`;
+    this.applyStateToUI();
+    this.flashSave("사진을 픽셀아트로 매핑했습니다 ✓");
+  }
+
+  captureSelfiePixel() {
+    const v = this.video;
+    if (!v || !v.videoWidth) { $("pixInfo").textContent = "먼저 카메라를 시작하세요."; return; }
+    const W = v.videoWidth, H = v.videoHeight, mir = this.state.mirror;
+    // draw full frame (mirrored to match the view) then crop the face square
+    const full = document.createElement("canvas");
+    full.width = W; full.height = H;
+    const fx = full.getContext("2d");
+    if (mir) { fx.translate(W, 0); fx.scale(-1, 1); }
+    fx.drawImage(v, 0, 0);
+
+    let crop;
+    const f = this.lastFaces[0];
+    if (f && f.landmarks) {
+      let minX = 1, minY = 1, maxX = 0, maxY = 0;
+      for (const lm of f.landmarks) {
+        const x = mir ? 1 - lm.x : lm.x;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (lm.y < minY) minY = lm.y; if (lm.y > maxY) maxY = lm.y;
+      }
+      const cx = (minX + maxX) / 2 * W, cy = (minY + maxY) / 2 * H;
+      const s = Math.max(maxX - minX, maxY - minY) * Math.max(W, H) * 1.25;
+      crop = { sx: cx - s / 2, sy: cy - s / 2, sw: s, sh: s };
+    } else {
+      crop = centerSquare(W, H);
+    }
+    this.applyPixelGridToFace(full, crop);
+  }
+
+  loadImagePixel(file) {
+    const img = new Image();
+    img.onload = () => {
+      this.applyPixelGridToFace(img, centerSquare(img.naturalWidth, img.naturalHeight));
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => { $("pixInfo").textContent = "이미지를 불러오지 못했습니다."; };
+    img.src = URL.createObjectURL(file);
   }
 
   // ============ Two-person slots & head presets ============
@@ -1331,6 +1412,7 @@ class App {
     $("lightIntensity").value = s.lightIntensity; $("lightIntensityVal").textContent = (+s.lightIntensity).toFixed(2);
     $("metalness").value = s.metalness; $("metalnessVal").textContent = (+s.metalness).toFixed(2);
     $("roughness").value = s.roughness; $("roughnessVal").textContent = (+s.roughness).toFixed(2);
+    $("bevel").value = s.bevel || 0; $("bevelVal").textContent = (+(s.bevel || 0)).toFixed(2);
 
     this.syncRenderToHead();
     this.syncUnits();
