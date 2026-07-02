@@ -165,29 +165,13 @@
       <div class="tab-panel" data-panel="appearance">
         <h3>큐브 픽셀 페이스</h3>
         <small class="hint">기본 큐브 머리의 눈·코·입 색상을 지정합니다.</small>
-        <div class="field">
-          <label>피부 / 바탕</label>
-          <input type="color" id="faceColor" value="#f1c27d" />
-        </div>
-        <div class="field">
-          <label>큐브 측면</label>
-          <input type="color" id="cubeColor" value="#d9a066" />
-        </div>
-        <div class="field">
-          <label>눈</label>
-          <input type="color" id="eyeColor" value="#2b2b2b" />
-        </div>
-        <div class="field">
-          <label>눈썹</label>
-          <input type="color" id="browColor" value="#5a3a1a" />
-        </div>
-        <div class="field">
-          <label>입</label>
-          <input type="color" id="mouthColor" value="#b5403a" />
-        </div>
-        <div class="field">
-          <label>볼터치</label>
-          <input type="color" id="cheekColor" value="#e88f8f" />
+        <div class="color-grid">
+          <label class="cg-item"><input type="color" id="faceColor" value="#f1c27d" /><span>피부</span></label>
+          <label class="cg-item"><input type="color" id="cubeColor" value="#d9a066" /><span>측면</span></label>
+          <label class="cg-item"><input type="color" id="eyeColor" value="#2b2b2b" /><span>눈</span></label>
+          <label class="cg-item"><input type="color" id="browColor" value="#5a3a1a" /><span>눈썹</span></label>
+          <label class="cg-item"><input type="color" id="mouthColor" value="#b5403a" /><span>입</span></label>
+          <label class="cg-item"><input type="color" id="cheekColor" value="#e88f8f" /><span>볼</span></label>
         </div>
         <div class="preview-wrap">
           <span class="hint">미리보기</span>
@@ -223,7 +207,7 @@
           </div>
           <div class="field">
             <label>격자 크기 <span class="val" id="gridNVal">8</span></label>
-            <input type="range" id="gridN" min="8" max="32" step="4" value="8" />
+            <input type="range" id="gridN" min="8" max="64" step="4" value="8" />
           </div>
           <div class="palette" id="palette"></div>
           <div class="paint-tools">
@@ -250,6 +234,8 @@
             <option value="16">16×16</option>
             <option value="24" selected>24×24</option>
             <option value="32">32×32</option>
+            <option value="48">48×48</option>
+            <option value="64">64×64</option>
           </select>
           <select id="pixColors" class="sel-input" title="색상 수">
             <option value="4">4색</option>
@@ -267,6 +253,33 @@
           <label class="btn small file-btn">🖼 이미지 불러오기
             <input type="file" id="pixImageInput" accept="image/*" hidden />
           </label>
+        </div>
+
+        <div id="pixEditor" class="pix-editor hidden">
+          <div class="preview-wrap">
+            <span class="hint">미리보기 (256px · 실시간 픽셀 필터)</span>
+            <canvas id="pixPreview" width="256" height="256"></canvas>
+          </div>
+          <div class="field">
+            <label>가로 오프셋 <span class="val" id="pixOffXVal">0.00</span></label>
+            <input type="range" id="pixOffX" min="-0.5" max="0.5" step="0.01" value="0" />
+          </div>
+          <div class="field">
+            <label>세로 오프셋 <span class="val" id="pixOffYVal">0.00</span></label>
+            <input type="range" id="pixOffY" min="-0.5" max="0.5" step="0.01" value="0" />
+          </div>
+          <div class="field">
+            <label>스케일(줌) <span class="val" id="pixScaleVal">1.00</span></label>
+            <input type="range" id="pixScale" min="0.4" max="2.5" step="0.01" value="1" />
+          </div>
+          <div class="field">
+            <label>종횡비 <span class="val" id="pixAspectVal">1.00</span></label>
+            <input type="range" id="pixAspect" min="0.5" max="2" step="0.01" value="1" />
+          </div>
+          <div class="btn-row">
+            <button id="pixApplyBtn" class="btn primary small">✓ 적용 (원본 삭제)</button>
+            <button id="pixCancelBtn" class="btn small ghost">취소</button>
+          </div>
         </div>
         <small id="pixInfo" class="hint"></small>
 

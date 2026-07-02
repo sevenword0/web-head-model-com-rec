@@ -998,14 +998,23 @@ class App {
     });
   }
 
-  // ============ Photo → pixel-art mapping ============
+  // ============ Photo → pixel-art mapping (with live editor) ============
   bindPixelArt() {
-    $("selfieBtn").addEventListener("click", () => this.captureSelfiePixel());
+    $("selfieBtn").addEventListener("click", () => this.captureSelfieSource());
     $("pixImageInput").addEventListener("change", (e) => {
       const file = e.target.files[0];
-      if (file) this.loadImagePixel(file);
+      if (file) this.loadImageSource(file);
       e.target.value = "";
     });
+    const upd = () => this.renderPixPreview();
+    ["pixRes", "pixColors", "pixPalette"].forEach((id) => $(id).addEventListener("change", upd));
+    [["pixOffX", "pixOffXVal"], ["pixOffY", "pixOffYVal"], ["pixScale", "pixScaleVal"], ["pixAspect", "pixAspectVal"]]
+      .forEach(([id, val]) => $(id).addEventListener("input", (e) => {
+        $(val).textContent = parseFloat(e.target.value).toFixed(2);
+        upd();
+      }));
+    $("pixApplyBtn").addEventListener("click", () => this.applyPixel());
+    $("pixCancelBtn").addEventListener("click", () => this.closePixEditor());
   }
 
   pixOpts() {
@@ -1018,31 +1027,76 @@ class App {
     };
   }
 
-  applyPixelGridToFace(source, crop) {
-    const o = this.pixOpts();
-    const grid = imageToGrid(source, crop, o.N, o);
-    this.state.gridN = o.N;
-    this.resampleAllGrids(o.N);
-    // put the photo on the base layer of the selected face; clear overlays
-    this.state.paintFaces[this._selFace] = { base: grid, brows: null, eyes: null, mouth: null };
-    this.state.faceMode = "painted";
-    $("pixInfo").textContent = `${o.N}×${o.N} · ${o.colorCount}색(${o.paletteMode === "palette" ? "지정" : "자동"}) → "${this._selFace}"면에 매핑됨`;
-    this.applyStateToUI();
-    this.flashSave("사진을 픽셀아트로 매핑했습니다 ✓");
+  openPixEditor(canvas, cx, cy, base) {
+    this._pixSrc = { canvas, cx, cy, base };
+    // reset crop controls
+    for (const [id, def] of [["pixOffX", 0], ["pixOffY", 0], ["pixScale", 1], ["pixAspect", 1]]) {
+      $(id).value = def; $(id + "Val").textContent = (+def).toFixed(2);
+    }
+    $("pixEditor").classList.remove("hidden");
+    $("pixInfo").textContent = "미리보기를 확인하고 오프셋·스케일·종횡비를 조절한 뒤 적용하세요.";
+    this.renderPixPreview();
   }
 
-  captureSelfiePixel() {
+  closePixEditor() {
+    this._pixSrc = null; // delete the original photo
+    this._pixGrid = null;
+    $("pixEditor").classList.add("hidden");
+  }
+
+  pixCrop() {
+    const s = this._pixSrc;
+    const scale = parseFloat($("pixScale").value) || 1;
+    const aspect = parseFloat($("pixAspect").value) || 1;
+    const offX = parseFloat($("pixOffX").value) || 0;
+    const offY = parseFloat($("pixOffY").value) || 0;
+    const sh = s.base / scale;
+    const sw = sh * aspect;
+    return { sx: s.cx + offX * s.base - sw / 2, sy: s.cy + offY * s.base - sh / 2, sw, sh };
+  }
+
+  renderPixPreview() {
+    if (!this._pixSrc) return;
+    const o = this.pixOpts();
+    const grid = imageToGrid(this._pixSrc.canvas, this.pixCrop(), o.N, o);
+    this._pixGrid = { grid, N: o.N };
+    const c = $("pixPreview");
+    const ctx = c.getContext("2d");
+    const u = c.width / o.N;
+    ctx.fillStyle = this.state.faceColor;
+    ctx.fillRect(0, 0, c.width, c.height);
+    for (let y = 0; y < o.N; y++) for (let x = 0; x < o.N; x++) {
+      const col = grid[y * o.N + x];
+      if (!col) continue;
+      ctx.fillStyle = col;
+      ctx.fillRect(Math.round(x * u), Math.round(y * u), Math.ceil(u), Math.ceil(u));
+    }
+  }
+
+  applyPixel() {
+    if (!this._pixGrid) return;
+    const { grid, N } = this._pixGrid;
+    this.state.gridN = N;
+    this.resampleAllGrids(N);
+    this.state.paintFaces[this._selFace] = { base: grid, brows: null, eyes: null, mouth: null };
+    this.state.faceMode = "painted";
+    this.closePixEditor(); // deletes the original photo
+    this.applyStateToUI();
+    $("pixInfo").textContent = `${N}×${N} 픽셀아트를 "${this._selFace}"면에 매핑함 (원본 삭제됨)`;
+    this.flashSave("픽셀아트 매핑 완료 · 원본 삭제 ✓");
+  }
+
+  captureSelfieSource() {
     const v = this.video;
     if (!v || !v.videoWidth) { $("pixInfo").textContent = "먼저 카메라를 시작하세요."; return; }
     const W = v.videoWidth, H = v.videoHeight, mir = this.state.mirror;
-    // draw full frame (mirrored to match the view) then crop the face square
     const full = document.createElement("canvas");
     full.width = W; full.height = H;
     const fx = full.getContext("2d");
     if (mir) { fx.translate(W, 0); fx.scale(-1, 1); }
     fx.drawImage(v, 0, 0);
 
-    let crop;
+    let cx = W / 2, cy = H / 2, base = Math.min(W, H);
     const f = this.lastFaces[0];
     if (f && f.landmarks) {
       let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -1051,20 +1105,20 @@ class App {
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (lm.y < minY) minY = lm.y; if (lm.y > maxY) maxY = lm.y;
       }
-      const cx = (minX + maxX) / 2 * W, cy = (minY + maxY) / 2 * H;
-      const s = Math.max(maxX - minX, maxY - minY) * Math.max(W, H) * 1.25;
-      crop = { sx: cx - s / 2, sy: cy - s / 2, sw: s, sh: s };
-    } else {
-      crop = centerSquare(W, H);
+      cx = (minX + maxX) / 2 * W; cy = (minY + maxY) / 2 * H;
+      base = Math.max(maxX - minX, maxY - minY) * Math.max(W, H) * 1.3;
     }
-    this.applyPixelGridToFace(full, crop);
+    this.openPixEditor(full, cx, cy, base);
   }
 
-  loadImagePixel(file) {
+  loadImageSource(file) {
     const img = new Image();
     img.onload = () => {
-      this.applyPixelGridToFace(img, centerSquare(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
       URL.revokeObjectURL(img.src);
+      this.openPixEditor(c, c.width / 2, c.height / 2, Math.min(c.width, c.height));
     };
     img.onerror = () => { $("pixInfo").textContent = "이미지를 불러오지 못했습니다."; };
     img.src = URL.createObjectURL(file);
