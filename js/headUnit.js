@@ -82,7 +82,7 @@ export class HeadUnit {
       // stay joined (no gaps) under scale/tilt — a slight overlap (1.02) avoids seams.
       this._pos.set(lx, ly, z);
       this._q.setFromAxisAngle(this._zAxis, -(b.rot || 0)); // grid y-down → local y-up
-      this._scl.set(cell * b.sx * 1.02, cell * b.sy * 1.02, t);
+      this._scl.set(cell * b.sx * 1.06, cell * b.sy * 1.06, t);
       this._m4.compose(this._pos, this._q, this._scl);
       this.blockMesh.setMatrixAt(i, this._m4);
       this.blockMesh.setColorAt(i, this._col.set(b.color));
@@ -173,8 +173,10 @@ export class HeadUnit {
         const layers = this.paintFaces.front;
         const has = layers && (layers.base || layers.brows || layers.eyes || layers.mouth);
         if (this.blockMode && has) {
-          // flat base on the texture; eyes/brows/mouth become 3D blocks
-          drawLayeredStatic(f.ctx, size, { base: layers.base }, this.paintGridN, this.colors.face);
+          // Draw the full flat rig underneath so any inter-block gaps show the
+          // matching feature colour (blocks read as connected relief, not
+          // separated cubes), then raise eyes/brows/mouth as 3D blocks on top.
+          drawRiggedFace(f.ctx, size, layers, this.paintGridN, params, this.colors.face);
           this._updateBlocks(params);
         } else if (has) {
           drawRiggedFace(f.ctx, size, layers, this.paintGridN, params, this.colors.face);
