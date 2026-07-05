@@ -79,10 +79,11 @@ export class HeadUnit {
       const lx = b.cx / N - 0.5;
       const ly = 0.5 - b.cy / N;
       // Match each block's size + orientation to the shape transform so blocks
-      // stay joined (no gaps) under scale/tilt — a slight overlap (1.02) avoids seams.
+      // exactly one cell (no overlap) so blocks don't extend the feature area;
+      // the flat rig drawn underneath fills any hairline gaps.
       this._pos.set(lx, ly, z);
       this._q.setFromAxisAngle(this._zAxis, -(b.rot || 0)); // grid y-down → local y-up
-      this._scl.set(cell * b.sx * 1.06, cell * b.sy * 1.06, t);
+      this._scl.set(cell * b.sx, cell * b.sy, t);
       this._m4.compose(this._pos, this._q, this._scl);
       this.blockMesh.setMatrixAt(i, this._m4);
       this.blockMesh.setColorAt(i, this._col.set(b.color));
