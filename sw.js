@@ -2,7 +2,12 @@
 // (bypassing the HTTP cache) so new deploys show up without a hard refresh.
 // Falls back to a normal (possibly cached) fetch only when offline.
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (e) => e.waitUntil((async () => {
+  // Purge any previously stored caches so nothing stale can be served.
+  const keys = await caches.keys();
+  await Promise.all(keys.map((k) => caches.delete(k)));
+  await self.clients.claim();
+})()));
 
 self.addEventListener("fetch", (e) => {
   const req = e.request;
