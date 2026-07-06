@@ -82,15 +82,26 @@
     <!-- ===== 사이드 패널 ===== -->
     <aside class="panel">
       <div class="tabs">
-        <button class="tab active" data-tab="head">머리</button>
+        <button class="tab active" data-tab="quick">간편</button>
+        <button class="tab" data-tab="head">머리</button>
         <button class="tab" data-tab="emotion">감정</button>
         <button class="tab" data-tab="appearance">외형</button>
         <button class="tab" data-tab="render">렌더</button>
         <button class="tab" data-tab="settings">설정</button>
       </div>
 
+      <!-- 간편 탭 (자주 쓰는 기능) -->
+      <div class="tab-panel active" data-panel="quick">
+        <small class="hint">자주 쓰는 기능을 모았어요. 자세한 설정은 위 탭에서.</small>
+        <div class="btn-row">
+          <button id="qSteve" class="btn small">🧑 스티브</button>
+          <button id="qCreeper" class="btn small">🟩 크리퍼</button>
+        </div>
+        <div id="quickTargets"></div>
+      </div>
+
       <!-- 머리 탭 -->
-      <div class="tab-panel active" data-panel="head">
+      <div class="tab-panel" data-panel="head">
         <h3>머리 종류</h3>
         <div class="seg">
           <button class="seg-btn active" data-headtype="cube">기본 큐브</button>
@@ -129,7 +140,7 @@
             <input type="range" id="rotZ" min="-45" max="45" step="1" value="0" />
           </div>
         </div>
-        <div class="field">
+        <div id="secSmoothing" class="field">
           <label>안정화 (떨림 감소) <span class="val" id="smoothingVal">0.65</span></label>
           <input type="range" id="smoothing" min="0" max="0.95" step="0.01" value="0.65" />
           <small class="hint">높을수록 부드럽지만 반응이 약간 느려집니다.</small>
@@ -141,6 +152,7 @@
 
       <!-- 감정 탭 -->
       <div class="tab-panel" data-panel="emotion">
+        <div id="secEmotion">
         <h3>감정 모드</h3>
         <div class="seg">
           <button class="seg-btn active" data-emomode="auto">자동 감지</button>
@@ -159,6 +171,7 @@
             <label>감정 정도 <span class="val" id="intensityVal">1.00</span></label>
             <input type="range" id="intensity" min="0" max="1" step="0.01" value="1" />
           </div>
+        </div>
         </div>
 
         <div class="field">
@@ -244,7 +257,8 @@
           <small class="hint">칸을 클릭/드래그해 큐브 정면(머리) 얼굴을 직접 칠하세요. 이 그림도 설정에 함께 저장됩니다.</small>
         </div>
 
-        <h3>사진 → 픽셀아트 매핑</h3>
+        <div id="secSelfie">
+        <h3>셀카·사진으로 얼굴 만들기</h3>
         <small class="hint">셀카/이미지를 낮은 해상도·적은 색으로 변환해 선택한 면에 매핑합니다.</small>
         <div class="row3">
           <select id="pixRes" class="sel-input" title="해상도">
@@ -299,6 +313,7 @@
           </div>
         </div>
         <small id="pixInfo" class="hint"></small>
+        </div>
 
         <h3>큐브 헤드 프리셋</h3>
         <small class="hint">지금 편집 중인 얼굴을 프리셋으로 저장해 사람별로 다르게 적용할 수 있습니다.</small>
@@ -312,6 +327,7 @@
         </div>
         <ul id="headPresetList" class="preset-list"></ul>
 
+        <div id="secSlots">
         <h3>동시 인식 (최대 3명)</h3>
         <small class="hint">각 사람에게 적용할 아바타를 선택합니다. (왼쪽→오른쪽 순서)</small>
         <div class="field">
@@ -325,6 +341,7 @@
         <div class="field">
           <label>사람 3 (오른쪽)</label>
           <select id="slot2" class="sel-input"></select>
+        </div>
         </div>
       </div>
 

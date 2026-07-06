@@ -63,6 +63,7 @@ class App {
     this.bindPixelArt();
     this.bindSlotsAndHeadPresets();
     this.applyStateToUI();
+    this.organizeQuickTab();
     this.renderHeadPresetList();
     this.repaintEditor();
     this.renderPreview();
@@ -1122,6 +1123,31 @@ class App {
     };
     img.onerror = () => { $("pixInfo").textContent = "이미지를 불러오지 못했습니다."; };
     img.src = URL.createObjectURL(file);
+  }
+
+  // ============ Quick (first) tab ============
+  organizeQuickTab() {
+    const t = $("quickTargets");
+    if (!t) return;
+    // most-used at top → least
+    for (const id of ["secSelfie", "secSlots", "secEmotion", "secSmoothing"]) {
+      const el = $(id);
+      if (el) t.appendChild(el); // moves the live node (keeps its bindings)
+    }
+    $("qSteve").addEventListener("click", () => this.applyBuiltinToEditor("b:steve"));
+    $("qCreeper").addEventListener("click", () => this.applyBuiltinToEditor("b:creeper"));
+  }
+
+  applyBuiltinToEditor(id) {
+    const b = Settings.builtinBundle(id);
+    Object.assign(this.state, {
+      headType: b.headType, faceMode: b.faceMode, gridN: b.gridN,
+      paintFaces: JSON.parse(JSON.stringify(b.paintFaces)),
+      faceColor: b.faceColor, cubeColor: b.cubeColor, eyeColor: b.eyeColor,
+      browColor: b.browColor, mouthColor: b.mouthColor, cheekColor: b.cheekColor,
+    });
+    this.applyStateToUI();
+    this.flashSave(id === "b:creeper" ? "크리퍼 적용 ✓" : "스티브 적용 ✓");
   }
 
   // ============ Two-person slots & head presets ============
