@@ -289,11 +289,18 @@ class App {
       }
     }
 
-    this.head.render();
-    ctx.drawImage(this.head.canvas, 0, 0, W, H);
+    // Only render/composite the 3D heads when at least one is visible.
+    if (anyFresh) {
+      this.head.render();
+      ctx.drawImage(this.head.canvas, 0, 0, W, H);
+    }
 
-    if (anyFresh && primary) this.updateReadoutFor(primary);
-    else this.setStatus(this.modelReady ? "얼굴을 찾는 중…" : "AI 모델 로딩 중…");
+    // Throttle the (relatively expensive) readout/meter DOM updates to ~8 fps.
+    if (anyFresh && primary) {
+      if (now - (this._readoutAt || 0) > 120) { this._readoutAt = now; this.updateReadoutFor(primary); }
+    } else {
+      this.setStatus(this.modelReady ? "얼굴을 찾는 중…" : "AI 모델 로딩 중…");
+    }
   }
 
   // Exponential moving average of a blendshape map (per slot) to de-jitter.
@@ -331,22 +338,25 @@ class App {
       blinkL: live.get("eyeBlinkLeft") || 0,
       blinkR: live.get("eyeBlinkRight") || 0,
     });
-    const morphMap = new Map(driving);
-    if (this.state.speaking) morphMap.set("jawOpen", mouthOpen);
-    unit.applyMorphs(morphMap, this.state.exprStrength);
+    // Only build a morph map for GLB heads (cube heads have no morph targets).
+    if (unit.headType === "glb" && unit.morphTargets.length) {
+      const morphMap = new Map(driving);
+      if (this.state.speaking) morphMap.set("jawOpen", mouthOpen);
+      unit.applyMorphs(morphMap, this.state.exprStrength);
+    }
 
     const s = this.state.smoothing ?? 0.65;
-    unit.align(face.landmarks, face.matrix, {
-      mirror: this.state.mirror,
-      scaleMul: this.state.scale,
-      offsetX: this.state.offsetX,
-      offsetY: this.state.offsetY,
-      offsetZ: this.state.offsetZ,
-      rotX: this.state.rotX,
-      rotY: this.state.rotY,
-      rotZ: this.state.rotZ,
-      poseAlpha: Math.max(0.05, 1 - s),
-    });
+    const o = this._alignOpts || (this._alignOpts = {});
+    o.mirror = this.state.mirror;
+    o.scaleMul = this.state.scale;
+    o.offsetX = this.state.offsetX;
+    o.offsetY = this.state.offsetY;
+    o.offsetZ = this.state.offsetZ;
+    o.rotX = this.state.rotX;
+    o.rotY = this.state.rotY;
+    o.rotZ = this.state.rotZ;
+    o.poseAlpha = Math.max(0.05, 1 - s);
+    unit.align(face.landmarks, face.matrix, o);
   }
 
   updateReadoutFor(face) {

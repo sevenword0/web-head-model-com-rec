@@ -43,6 +43,13 @@ export class HeadUnit {
 
     this._buildCube();
     this._buildBlocks();
+    // reusable scratch objects for align() (avoid per-frame allocations)
+    this._tPos = new THREE.Vector3();
+    this._tQuat = new THREE.Quaternion();
+    this._aMat = new THREE.Matrix4();
+    this._aPos = new THREE.Vector3();
+    this._aScl = new THREE.Vector3();
+    this._aEuler = new THREE.Euler();
     this.root = new THREE.Group();
     this.scene.add(this.root);
     this.setHeadType("cube");
@@ -289,9 +296,6 @@ export class HeadUnit {
   align(landmarks, matrix, opts) {
     const W = this.width, H = this.height;
     const mir = opts.mirror;
-    const toPx = (lm) => ({ x: (mir ? 1 - lm.x : lm.x) * W, y: lm.y * H });
-    const le = toPx(landmarks[L.leftEye]);
-    const re = toPx(landmarks[L.rightEye]);
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const lm of landmarks) {
@@ -300,36 +304,36 @@ export class HeadUnit {
       if (y < minY) minY = y; if (y > maxY) maxY = y;
     }
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    const dim = Math.max(maxX - minX, maxY - minY) * 1.35 * opts.scaleMul;
+    const tScl = Math.max(maxX - minX, maxY - minY) * 1.35 * opts.scaleMul;
+    const tPos = this._tPos.set(cx - W / 2 + opts.offsetX, -(cy - H / 2) + opts.offsetY, opts.offsetZ || 0);
 
-    // Target transform
-    const tPos = new THREE.Vector3(cx - W / 2 + opts.offsetX, -(cy - H / 2) + opts.offsetY, opts.offsetZ || 0);
-    const tScl = dim;
-    const q = new THREE.Quaternion();
+    const q = this._tQuat;
     if (matrix && matrix.length === 16) {
-      const m = new THREE.Matrix4().fromArray(matrix);
-      const pos = new THREE.Vector3(), scl = new THREE.Vector3();
-      m.decompose(pos, q, scl);
+      this._aMat.fromArray(matrix).decompose(this._aPos, q, this._aScl);
       if (mir) { q.y = -q.y; q.z = -q.z; }
     } else {
-      const roll = Math.atan2(re.y - le.y, re.x - le.x);
-      q.setFromEuler(new THREE.Euler(0, 0, -roll));
+      const le = landmarks[L.leftEye], re = landmarks[L.rightEye];
+      const lex = (mir ? 1 - le.x : le.x) * W, ley = le.y * H;
+      const rex = (mir ? 1 - re.x : re.x) * W, rey = re.y * H;
+      q.setFromEuler(this._aEuler.set(0, 0, -Math.atan2(rey - ley, rex - lex)));
     }
-    const euler = new THREE.Euler().setFromQuaternion(q, "XYZ");
-    euler.x += THREE.MathUtils.degToRad(opts.rotX);
-    euler.y += THREE.MathUtils.degToRad(opts.rotY);
-    euler.z += THREE.MathUtils.degToRad(opts.rotZ);
-    const tQuat = new THREE.Quaternion().setFromEuler(euler);
+    if (opts.rotX || opts.rotY || opts.rotZ) {
+      this._aEuler.setFromQuaternion(q, "XYZ");
+      this._aEuler.x += THREE.MathUtils.degToRad(opts.rotX);
+      this._aEuler.y += THREE.MathUtils.degToRad(opts.rotY);
+      this._aEuler.z += THREE.MathUtils.degToRad(opts.rotZ);
+      q.setFromEuler(this._aEuler);
+    }
 
     // Temporal smoothing (EMA / slerp) to reduce jitter. alpha small = smoother.
     const a = Math.max(0.05, Math.min(1, opts.poseAlpha ?? 1));
     if (!this._sm || this._wasHidden) {
-      this._sm = { pos: tPos.clone(), scl: tScl, quat: tQuat.clone() };
+      this._sm = { pos: tPos.clone(), scl: tScl, quat: q.clone() };
       this._wasHidden = false;
     } else {
       this._sm.pos.lerp(tPos, a);
       this._sm.scl += (tScl - this._sm.scl) * a;
-      this._sm.quat.slerp(tQuat, a);
+      this._sm.quat.slerp(q, a);
     }
     this.root.position.copy(this._sm.pos);
     this.root.scale.setScalar(this._sm.scl);

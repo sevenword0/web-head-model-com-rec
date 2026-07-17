@@ -20,6 +20,7 @@ export class HeadRenderer {
       alpha: true,
       antialias: true,
       preserveDrawingBuffer: true,
+      powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(width, height, false);
